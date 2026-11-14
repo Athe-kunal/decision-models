@@ -4,11 +4,11 @@ import peft
 import pytest
 import torch
 
-from llm_jev import config
-from llm_jev.losses import option
-from llm_jev.losses import trie
-from llm_jev.models import decoder
-from llm_jev.models import encoder
+from decision_models import config
+from decision_models.losses import option
+from decision_models.losses import trie
+from decision_models.models import decoder
+from decision_models.models import encoder
 
 
 @pytest.fixture(scope="module")

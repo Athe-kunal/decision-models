@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Decision Model Explorer</title>
+<style>
+  :root { --bg: #fbfbfa; --fg: #1d1d1b; --muted: #6b6b66; --line: #e3e2de;
+          --accent: #2a78d6; --gold: #2e8b57; --cite: 42, 120, 214; --ev: 235, 104, 52; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #161615; --fg: #ecebe7; --muted: #9a9993; --line: #33322f; --accent: #6aa8f0; --gold: #5cc28a; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--fg);
+         font: 15px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { max-width: 980px; margin: 0 auto; padding: 24px 16px 64px; }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  .muted { color: var(--muted); font-size: 13px; }
+  .bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 16px 0; }
+  select, button, label { font: inherit; }
+  select, button { padding: 6px 10px; border: 1px solid var(--line); border-radius: 6px;
+                   background: transparent; color: var(--fg); }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  button:disabled { opacity: .5; }
+  section { border-top: 1px solid var(--line); padding-top: 12px; margin-top: 16px; }
+  .opt { display: grid; grid-template-columns: 1fr 64px; gap: 8px; padding: 4px 0; }
+  .opt .p { height: 6px; background: var(--accent); border-radius: 3px; margin-top: 4px; }
+  .tag { font-size: 12px; padding: 0 6px; border-radius: 4px; border: 1px solid var(--line); margin-left: 6px; }
+  .tag.gold { color: var(--gold); border-color: var(--gold); }
+  .doc { white-space: pre-wrap; overflow-wrap: anywhere; }
+  .gold-span { text-decoration: underline 2px var(--gold); text-underline-offset: 3px; }
+  .err { color: #c0392b; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Decision Model Explorer</h1>
+  <div class="muted" id="info">loading…</div>
+  <div class="bar">
+    <select id="source"><option value="">all datasets</option></select>
+    <label><input type="checkbox" id="spans"> gold evidence only</label>
+    <label><input type="checkbox" id="shuffle"> shuffle options</label>
+    <button class="primary" id="sample">Sample a row</button>
+    <button id="cite" disabled>Cite</button>
+  </div>
+  <div id="out"></div>
+</main>
+<script>
+const $ = (id) => document.getElementById(id);
+const esc = (s) => s.replace(/[&<>]/g, (c) => ({"&": "&amp;", "<": "&lt;", ">": "&gt;"}[c]));
+let current = null, info = null;
+
+async function api(path) {
+  const r = await fetch(path);
+  const j = await r.json();
+  if (!r.ok) throw new Error(j.detail || r.statusText);
+  return j;
+}
+
+function renderDoc(row, cite) {
+  // Character shading per part: ContextCite weight (blue) and evidence head (orange).
+  return row.partTexts.map((text, part) => {
+    const shade = new Float32Array(text.length), ev = new Float32Array(text.length);
+    const gold = new Uint8Array(text.length);
+    row.spans.filter((s) => s.part === part).forEach((s) => gold.fill(1, s.start, s.end));
+    if (cite && cite.contextcite) {
+      const w = cite.contextcite.w, max = Math.max(...w, 1e-9);
+      row.sentences.forEach((s, j) => { if (s.part === part && w[j] > 0) shade.fill(w[j] / max, s.start, s.end); });
+    }
+    if (cite && cite.evidence) {
+      cite.evidence.tokens.filter((t) => t.part === part && t.p >= cite.evidence.threshold)
+        .forEach((t) => ev.fill(t.p, t.start, t.end));
+    }
+    let html = "", i = 0;
+    while (i < text.length) {
+      let j = i + 1;
+      while (j < text.length && shade[j] === shade[i] && ev[j] === ev[i] && gold[j] === gold[i]) j++;
+      const bg = ev[i] > 0 ? `rgba(var(--ev), ${0.15 + 0.5 * ev[i]})`
+               : shade[i] > 0 ? `rgba(var(--cite), ${0.12 + 0.5 * shade[i]})` : "";
+      const cls = gold[i] ? ' class="gold-span"' : "";
+      html += `<span${cls} style="background:${bg}">${esc(text.slice(i, j))}</span>`;
+      i = j;
+    }
+    return `<p class="muted">${esc(row.parts[part])}</p><div class="doc">${html}</div>`;
+  }).join("");
+}
+
+function render(row, cite) {
+  const opts = row.options.map((o, k) => `
+    <div class="opt"><div>[${k + 1}] ${esc(o)}
+      ${k === row.gold ? '<span class="tag gold">gold</span>' : ""}
+      ${k === row.answer ? '<span class="tag">chosen</span>' : ""}
+      <div class="p" style="width:${(100 * row.q[k]).toFixed(1)}%"></div></div>
+      <div class="muted">${row.q[k].toFixed(3)}</div></div>`).join("");
+  let note = "";
+  if (cite && cite.contextcite) note += ` · ContextCite ${(1000 * cite.contextcite.seconds).toFixed(0)} ms (blue)`;
+  if (cite && cite.evidence) note += ` · evidence head ${(1000 * cite.evidence.seconds).toFixed(0)} ms (orange)`;
+  $("out").innerHTML = `
+    <section><div class="muted">${esc(row.source)} · ${esc(row.id)} · ${row.tokens} tokens ·
+      ${(1000 * row.seconds).toFixed(0)} ms${note} · gold spans underlined</div>
+      <p><b>${esc(row.question)}</b></p>${opts}</section>
+    <section>${renderDoc(row, cite)}</section>`;
+}
+
+async function sample() {
+  try {
+    const q = new URLSearchParams({source: $("source").value, spans: $("spans").checked ? 1 : 0});
+    const {id} = await api(`/api/sample?${q}`);
+    current = await api(`/api/row?id=${encodeURIComponent(id)}&shuffle=${$("shuffle").checked ? 1 : 0}`);
+    render(current, null);
+    $("cite").disabled = !info.methods.length || current.shuffled;
+  } catch (e) { $("out").innerHTML = `<p class="err">${esc(e.message)}</p>`; }
+}
+
+async function citeRow() {
+  $("cite").disabled = true;
+  try { render(current, await api(`/api/attribute?id=${encodeURIComponent(current.id)}`)); }
+  catch (e) { $("out").insertAdjacentHTML("beforeend", `<p class="err">${esc(e.message)}</p>`); }
+}
+
+(async () => {
+  info = await api("/api/info");
+  $("info").textContent = `${info.kind} · ${info.model}${info.adapter ? " + " + info.adapter : ""} · ${info.data}` +
+    (info.methods.length ? ` · cites with ${info.methods.join(", ")}` : "");
+  for (const d of await api("/api/datasets")) {
+    $("source").insertAdjacentHTML("beforeend", `<option value="${esc(d.id)}">${esc(d.id)} (${d.rows})</option>`);
+  }
+  $("sample").onclick = sample;
+  $("cite").onclick = citeRow;
+})();
+</script>
+</body>
+</html>

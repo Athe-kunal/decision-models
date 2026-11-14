@@ -7,15 +7,15 @@ import shutil
 import pytest
 import torch
 
-from llm_jev import config
-from llm_jev.analysis import coupling
-from llm_jev.data import schema
-from llm_jev.data import storage
-from llm_jev.evaluation import evaluate
-from llm_jev.evidence import train as evidence_train
-from llm_jev.models import decoder
-from llm_jev.models import encoder
-from llm_jev.training import trainer
+from analysis import coupling
+from decision_models import config
+from decision_models.data import schema
+from decision_models.data import storage
+from decision_models.evaluation import evaluate
+from decision_models.evidence import train as evidence_train
+from decision_models.models import decoder
+from decision_models.models import encoder
+from decision_models.training import trainer
 
 
 @pytest.fixture(scope="module")

@@ -3,17 +3,18 @@ import pathlib
 import omegaconf
 import pytest
 
-from llm_jev import config
+from analysis import config as analysis_config
+from decision_models import config
 
 CONFIGS = pathlib.Path(__file__).parents[1] / "configs"
 SCHEMAS = {
     "data": config.BuildDataConfig,
     "evidence/ultrabert_380m.yaml": config.EvidenceConfig,
     "evidence/spans.yaml": config.SpansConfig,
-    "analysis/at2.yaml": config.AT2Config,
-    "analysis/citation.yaml": config.CitationConfig,
-    "analysis/coupling.yaml": config.CouplingConfig,
-    "analysis/latency.yaml": config.LatencyConfig,
+    "analysis/at2.yaml": analysis_config.AT2Config,
+    "analysis/citation.yaml": analysis_config.CitationConfig,
+    "analysis/coupling.yaml": analysis_config.CouplingConfig,
+    "analysis/latency.yaml": analysis_config.LatencyConfig,
 }
 REQUIRED = ["model.kind=encoder", "model.path=runs/x", "out=runs/x"]
 
@@ -23,7 +24,7 @@ def _schema(path: pathlib.Path) -> type:
     if rel.startswith("train/"):
         return (
             config.EncoderTrainConfig
-            if "ultrabert" in rel
+            if "qwen" not in rel
             else config.DecoderTrainConfig
         )
     if rel == "evaluate/benchmarks.yaml":
@@ -94,7 +95,7 @@ run: {out: runs/x, seed: 1, epochs: 1, max_steps: -1, eval_every: 0, skip_base_e
 
 def test_from_command_line() -> None:
     cfg, raw = config.from_command_line(
-        config.CouplingConfig, argv=["runs=[a,b]", "shuffles=1"]
+        analysis_config.CouplingConfig, argv=["runs=[a,b]", "shuffles=1"]
     )
     assert cfg.runs == ["a", "b"]
     assert raw.shuffles == 1

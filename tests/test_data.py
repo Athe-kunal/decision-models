@@ -1,8 +1,8 @@
 import pytest
 
-from llm_jev.data import prompts
-from llm_jev.data import sampling
-from llm_jev.data import schema
+from decision_models.data import prompts
+from decision_models.data import sampling
+from decision_models.data import schema
 
 
 def test_row_round_trip(example: schema.Example) -> None:

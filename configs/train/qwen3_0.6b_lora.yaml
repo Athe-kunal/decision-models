@@ -12,6 +12,7 @@ data:
   source: data/splits/reason_long_nimble
   max_tokens: 16384
   eval_per: 100
+  gen_per: 20             # rows per dataset also answered in text mode
 optim:
   lr: 1.0e-4
   weight_decay: 0.01

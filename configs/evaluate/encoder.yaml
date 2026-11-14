@@ -1,5 +1,5 @@
 # Evaluates a trained encoder run (its config.yaml gives the prompt format).
-# llm-jev-evaluate --config configs/evaluate/encoder.yaml \
+# decision-models-evaluate --config configs/evaluate/encoder.yaml \
 #     model.path=runs/ultrabert_380m_lr1.5e-5 part=test tag=test
 model:
   kind: encoder

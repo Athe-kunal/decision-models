@@ -230,3 +230,8 @@ astarag2843@gmail.com/
 .claude/
 paper/arxiv/
 paper/arxiv.tar.gz
+
+# blog (React)
+node_modules/
+blogs/dist/
+blogs/.vite/

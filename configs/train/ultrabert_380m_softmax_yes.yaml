@@ -15,7 +15,7 @@ format:
   no_token: null
   no_word: null
 data:
-  source: Athekunal/llm-jev-reason-long
+  source: Athekunal/decision-models-reason-long
   max_tokens: 32768
   eval_per: 100
   eval_seed: 20260922         # Fixed across run.seed replicates.

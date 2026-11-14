@@ -9,8 +9,8 @@ from tokenizers import pre_tokenizers
 import torch
 import transformers
 
-from llm_jev import config
-from llm_jev.data import schema
+from decision_models import config
+from decision_models.data import schema
 
 CHAT_TEMPLATE = (
     "{% for m in messages %}<|im_start|>{{ m['role'] }}\n{{ m['content'] }}"

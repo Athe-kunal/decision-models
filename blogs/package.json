@@ -1,0 +1,32 @@
+{
+  "name": "llm-as-jev-blog",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "data": "cd .. && PYTHONPATH=src .venv/bin/python blogs/export_data.py",
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "data:trie": "cd .. && CUDA_VISIBLE_DEVICES=${GPU:-0} PYTHONPATH=src .venv/bin/python blogs/export_trie.py",
+    "data:anchors": "cd .. && CUDA_VISIBLE_DEVICES=${GPU:-0} PYTHONPATH=src .venv/bin/python blogs/export_anchors.py",
+    "data:contextcite": "cd .. && CUDA_VISIBLE_DEVICES=${GPU:-0} PYTHONPATH=src .venv/bin/python blogs/export_contextcite.py",
+    "data:losscode": "cd .. && CUDA_VISIBLE_DEVICES=${GPU:-0} PYTHONPATH=src .venv/bin/python blogs/export_loss_code.py",
+    "data:results": "cd .. && .venv/bin/python blogs/export_results.py",
+    "data:ablation": "cd .. && .venv/bin/python blogs/export_ablation.py",
+    "data:encoder": "cd .. && .venv/bin/python blogs/export_encoder.py",
+    "data:at2": "cd .. && CUDA_VISIBLE_DEVICES=${GPU:-0} PYTHONPATH=src .venv/bin/python blogs/export_at2.py",
+    "api": "cd .. && CUDA_VISIBLE_DEVICES=${GPU:-0} .venv/bin/python -m decision_models.inference.server model.kind=encoder model.path=${RUN:-runs/ultrabert_380m_lr1.5e-5}"
+  },
+  "dependencies": {
+    "framer-motion": "11.11.17",
+    "katex": "^0.16.11",
+    "mermaid": "11.4.1",
+    "react": "18.3.1",
+    "react-dom": "18.3.1"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "4.3.4",
+    "vite": "5.4.11"
+  }
+}

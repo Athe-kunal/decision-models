@@ -2,13 +2,13 @@ import numpy as np
 import pytest
 import torch
 
-from llm_jev import config
-from llm_jev.analysis import context_cite
-from llm_jev.data import schema
-from llm_jev.evidence import head as head_lib
-from llm_jev.evidence import metrics
-from llm_jev.evidence import sentences
-from llm_jev.models import encoder
+from decision_models import config
+from decision_models.citation import context_cite
+from decision_models.data import schema
+from decision_models.evidence import head as head_lib
+from decision_models.evidence import metrics
+from decision_models.evidence import sentences
+from decision_models.models import encoder
 
 nltk_punkt = pytest.importorskip("nltk")
 

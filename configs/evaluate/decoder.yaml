@@ -1,5 +1,5 @@
 # Evaluates a decoder (a base model, or with a LoRA adapter) on the dev rows.
-# llm-jev-evaluate --config configs/evaluate/decoder.yaml \
+# decision-models-evaluate --config configs/evaluate/decoder.yaml \
 #     model.adapter=runs/qwen3_0.6b_lora/adapter out=runs/qwen3_0.6b_lora
 model:
   kind: decoder
