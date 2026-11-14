@@ -1,8 +1,8 @@
 """ContextCite for any decision model, with the fastest backend that fits.
 
-Decoders use one-pass packing (`masked`, removal "reader" or "full") after
-`prepare`; encoders, and decoders with removal "delete", use
-`context_cite.attribute` (packed on FA2 varlen for encoders).
+Decoders with removal "reader" or "full" use one-pass packing (`masked`)
+after `prepare`; encoders, and decoders with removal "delete", delete the
+dropped sentences (packed on FA2 varlen for encoders).
 """
 
 from typing import Any
@@ -15,42 +15,43 @@ from decision_models.models import base
 from decision_models.models import decoder
 from decision_models.models import flash_attention
 
-PACKED = ("reader", "full")
 
-
-def _packed(model: base.DecisionModel, cfg: config.CiteConfig) -> bool:
-    return isinstance(model, decoder.TrieDecoder) and cfg.removal in PACKED
+def packed(model: base.DecisionModel, cfg: config.CiteConfig) -> bool:
+    """Whether ContextCite runs one-pass packed masking for this model."""
+    return isinstance(model, decoder.TrieDecoder) and cfg.removal != "delete"
 
 
 def prepare(model: base.DecisionModel, cfg: config.CiteConfig) -> None:
-    """Switches a decoder to packed attention (and fused kernels) once.
-
-    Raises:
-      ValueError: On an unknown removal.
-    """
-    if cfg.removal not in (*PACKED, "delete"):
-        raise ValueError(
-            f"removal is reader, full or delete, not {cfg.removal!r}"
-        )
-    if _packed(model, cfg):
+    """Switches a decoder to packed attention (and fused kernels) once."""
+    if packed(model, cfg):
         flash_attention.use_decoder(model.unwrapped)
         if cfg.fuse:
             decoder.fuse(model.unwrapped)
+
+
+def scorer(
+    model: base.DecisionModel,
+    cfg: config.CiteConfig,
+    exact: bool = False,
+) -> context_cite.KeepScorer:
+    """The keep-mask scorer ContextCite uses for `model` under `cfg`.
+
+    With `exact`, packed decoders use full masking (equal to deletion) even
+    when `cfg.removal` is "reader", e.g. to measure what a weighting predicts.
+    """
+    if packed(model, cfg):
+        removal = "full" if exact else cfg.removal
+        return masked.packed_scorer(model, removal, cfg.budget)  # type: ignore[arg-type]
+    return context_cite.deletion_scorer(model)
 
 
 def cite(
     model: base.DecisionModel, example: schema.Example, cfg: config.CiteConfig
 ) -> context_cite.Attribution:
     """ContextCite on one row; call `prepare(model, cfg)` first."""
-    if _packed(model, cfg):
-        return masked.attribute(
-            model,  # type: ignore[arg-type]
-            example,
-            num_ablations=cfg.num_ablations,
-            removal=cfg.removal,
-            budget=cfg.budget,
-        )
-    return context_cite.attribute(model, example, cfg.num_ablations)
+    return context_cite.attribute_with(
+        scorer(model, cfg), example, cfg.num_ablations
+    )
 
 
 def top_sentences(
@@ -61,16 +62,16 @@ def top_sentences(
         (i for i, w in enumerate(result.weights) if w > 0),
         key=lambda i: -result.weights[i],
     )[:k]
-    out = []
-    for i in ranked:
-        s = result.sentences[i]
-        out.append(
-            {
-                "part": s.part,
-                "start": s.start,
-                "end": s.end,
-                "w": float(result.weights[i]),
-                "text": example.parts[s.part].text[s.start : s.end],
-            }
-        )
-    return out
+    return [
+        {
+            "index": i,
+            "part": result.sentences[i].part,
+            "start": result.sentences[i].start,
+            "end": result.sentences[i].end,
+            "w": float(result.weights[i]),
+            "text": example.parts[result.sentences[i].part].text[
+                result.sentences[i].start : result.sentences[i].end
+            ],
+        }
+        for i in ranked
+    ]

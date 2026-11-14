@@ -1,6 +1,6 @@
 # Training
 
-Every run is a YAML file under `configs/train/` plus `key=value` overrides. The resolved config is saved to `<run.out>/config.yaml`.
+Every run is a YAML file under `configs/train/` plus `key=value` overrides. The resolved config is saved to `<run.out>/config.yaml`. Fields with a fixed set of values (`optim.loss`, `model.finetune`, `objective.anchors`, `run.mixed_precision`, ...) are `Literal`-typed, so a typo fails at startup. Quote `"no"` for `run.mixed_precision`: YAML reads a bare `no` as `false`.
 
 ## Encoder (one mask per option)
 
@@ -39,7 +39,7 @@ optim.lr=1e-5  optim.batch_size=64  data.source=Athekunal/llm-jev-reason-long  d
 
 ```bash
 scripts/evaluate.sh encoder runs/ultrabert_380m_lr1.5e-5 0                     # eval split + benchmarks
-decision-models-evaluate --config configs/evaluate/encoder.yaml model.path=runs/x part=test tag=test
+decision-models-evaluate --config configs/evaluate/encoder.yaml model.path=runs/x rows.part=test tag=test
 decision-models-evaluate --config configs/evaluate/encoder.yaml model.path=runs/x label_shares=true
 decision-models-evaluate --config configs/evaluate/decoder.yaml model.adapter=runs/q/adapter out=runs/q
 decision-models-benchmarks --config configs/evaluate/benchmarks.yaml model.kind=encoder model.path=runs/x

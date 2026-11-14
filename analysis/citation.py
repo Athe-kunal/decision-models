@@ -1,7 +1,7 @@
 """Compares citation baselines for an encoder on rows with gold evidence.
 
 Usage:
-  python -m analysis.citation at2=runs/at2_ultrabert_380m part=test
+  python -m analysis.citation at2=runs/at2_ultrabert_380m rows.part=test
 
 Methods: AT2 (theta from <at2>/theta.pt), average attention (uniform
 theta) and ContextCite by deletion, all on the AT2 run's encoder. Each gives
@@ -20,7 +20,6 @@ from collections.abc import Callable
 from collections.abc import Sequence
 import json
 import pathlib
-import time
 from typing import Any
 
 from loguru import logger
@@ -31,24 +30,14 @@ from analysis import at2
 from analysis import config as analysis_config
 from decision_models import config
 from decision_models.citation import context_cite
+from decision_models.citation import evaluate as cite_evaluate
+from decision_models.citation.evaluate import METRICS
+from decision_models.data import sampling
 from decision_models.data import schema
-from decision_models.data import storage
-from decision_models.evidence import metrics as evidence_metrics
 from decision_models.evidence import sentences as sentences_lib
+from decision_models.models import base
 from decision_models.models import encoder
 
-TOP_K = (1, 3, 5)
-METRICS = (
-    "ap",
-    "top1",
-    "precision",
-    "recall",
-    "lds",
-    "drop@1",
-    "drop@3",
-    "drop@5",
-    "seconds",
-)
 Method = Callable[[schema.Example], context_cite.Attribution]
 
 
@@ -64,76 +53,47 @@ def methods(
     }
 
 
-def _timed(
-    model: encoder.MaskedEncoder, fn: Method, row: schema.Example
-) -> tuple[Any, float]:
-    if model.device.type == "cuda":
-        torch.cuda.synchronize()
-    start = time.perf_counter()
-    result = fn(row)
-    if model.device.type == "cuda":
-        torch.cuda.synchronize()
-    return result, time.perf_counter() - start
-
-
 def evaluate_row(
     model: encoder.MaskedEncoder,
     row: schema.Example,
     fns: dict[str, Method],
-    lds_masks: int = 32,
-    seed: int = 1_000_000,
 ) -> dict[str, Any]:
-    """Every method's weights and metrics on one row.
-
-    All methods share the held-out ablations, and one batched call scores
-    them together with every method's top-k removals.
-    """
-    results, seconds = {}, {}
+    """Every method's weights and metrics on one row."""
+    results: dict[str, context_cite.Attribution] = {}
+    seconds: dict[str, float] = {}
     for name, fn in fns.items():
-        results[name], seconds[name] = _timed(model, fn, row)
-    answer = results["contextcite"].answer
-    sentences = results["contextcite"].sentences
-    n = len(sentences)
-    held = sentences_lib.ablation_masks(lds_masks, n, seed=seed)  # [L, S]
-    ks = [k for k in TOP_K if k < n]
-    keep = [np.ones(n, bool), *held]
-    where = {}
-    for name, result in results.items():
-        order = np.argsort(-result.weights, kind="stable")
-        for k in ks:
-            mask = np.ones(n, bool)
-            mask[order[:k]] = False
-            where[name, k] = len(keep)
-            keep.append(mask)
-    y = context_cite.ablation_targets(
-        model, row, sentences, np.stack(keep), answer
+        results[name], seconds[name] = base.timed(
+            model.device, lambda fn=fn: fn(row)
+        )
+    reference = results["contextcite"]
+
+    def targets(keep: np.ndarray) -> np.ndarray:
+        return context_cite.ablation_targets(
+            model, row, reference.sentences, keep, reference.answer
+        )
+
+    scores = cite_evaluate.weight_metrics(
+        row,
+        reference.sentences,
+        {name: r.weights for name, r in results.items()},
+        targets,
     )
-    out: dict[str, Any] = {
+    return {
         "id": row.id,
         "source": row.source,
-        "sources": n,
-        "answer": answer,
+        "sources": len(reference.sentences),
+        "answer": reference.answer,
         "gold": row.gold,
         "answers_agree": len({r.answer for r in results.values()}) == 1,
-        "methods": {},
+        "methods": {
+            name: {
+                **scores[name],
+                "seconds": seconds[name],
+                "w": r.weights.tolist(),
+            }
+            for name, r in results.items()
+        },
     }
-    from scipy.stats import spearmanr
-
-    for name, result in results.items():
-        w = result.weights
-        lds = (
-            spearmanr(held @ w, y[1 : 1 + len(held)]).statistic
-            if w.std() > 0
-            else 0.0
-        )
-        out["methods"][name] = {
-            **(evidence_metrics.span_metrics(row, sentences, w) or {}),
-            "lds": float(lds),
-            **{f"drop@{k}": float(y[0] - y[where[name, k]]) for k in ks},
-            "seconds": seconds[name],
-            "w": w.tolist(),
-        }
-    return out
 
 
 def summarize(rows: Sequence[dict[str, Any]]) -> dict[str, Any]:
@@ -186,28 +146,22 @@ def main() -> None:
     """Scores every method on the rows and writes the JSON."""
     cfg, _ = config.from_command_line(analysis_config.CitationConfig, __doc__)
     at2_dir = pathlib.Path(cfg.at2)
-    at2_cfg: analysis_config.AT2Config = config.resolve(
-        config.load(analysis_config.AT2Config, at2_dir / "config.yaml")
-    )  # type: ignore[assignment]
-    name = f"attribution_{cfg.split}" + (f"_{cfg.part}" if cfg.part else "")
+    at2_cfg = config.load(analysis_config.AT2Config, at2_dir / "config.yaml")
+    part = "" if cfg.rows.part == "all" else f"_{cfg.rows.part}"
+    name = f"attribution_{cfg.rows.split}{part}"
     logger.add(at2_dir / f"{name}.log")
     model = encoder.MaskedEncoder.from_run(
         at2_cfg.encoder.run, attention=at2_cfg.encoder.attention
     )
     theta = torch.load(at2_dir / "theta.pt").to(model.device)
-    rows = sentences_lib.rows_with_evidence(
-        storage.load_examples(cfg.source, cfg.split),
-        cfg.per,
-        cfg.seed,
-        cfg.part,
-    )
+    rows = sampling.select(cfg.rows, sentences_lib.has_evidence)
     logger.info(
         "{} rows: {}",
         len(rows),
-        dict(collections.Counter(r.source for r in rows)),
+        {s: len(rs) for s, rs in sampling.by_source(rows).items()},
     )
     fns = methods(model, theta)
-    results = []
+    results: list[dict[str, Any]] = []
     for i, row in enumerate(rows, 1):
         results.append(evaluate_row(model, row, fns))
         if i % 25 == 0 or i == len(rows):

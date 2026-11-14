@@ -4,43 +4,20 @@ import pytest
 
 from decision_models import config
 from decision_models.evidence import head as head_lib
-from decision_models.evidence import sentences as sentences_lib
 from decision_models.inference import predict
 from decision_models.inference import server
-from decision_models.models import encoder
 
 fastapi_testclient = pytest.importorskip("fastapi.testclient")
 
 
-def _split(example):
-    text = example.parts[0].text
-    out, start = [], 0
-    for piece in text.split(". "):
-        piece = piece if piece.endswith(".") else piece + "."
-        begin = text.index(piece, start)
-        out.append(
-            sentences_lib.Sentence(
-                0, begin, begin + len(piece), text[start:begin]
-            )
-        )
-        start = begin + len(piece)
-    return out
-
-
 @pytest.fixture
-def client(monkeypatch, encoder_dir, encoder_format, example, tmp_path):
-    monkeypatch.setattr(sentences_lib, "split", _split)
-    model_cfg = config.EncoderModelConfig(id=str(encoder_dir), attention="sdpa")
-    model = encoder.MaskedEncoder.build(model_cfg, encoder_format, "cpu")
-    hidden = model.unwrapped.model.config.hidden_size
-    evidence = server.Evidence(
-        head_lib.EvidenceHead(hidden, width=8).eval(), 0.5
-    )
+def client(offline_split, masked_encoder, evidence_head, example):
     cfg = config.ServeConfig(
         model=config.ModelRef(kind="encoder", path="toy"),
         citation=config.CiteConfig(removal="delete", num_ablations=8),
     )
-    app = server.make_app(model, [example], cfg, evidence)
+    evidence = head_lib.Trained(evidence_head, 0.5)
+    app = server.make_app(masked_encoder, [example], cfg, evidence)
     return fastapi_testclient.TestClient(app)
 
 

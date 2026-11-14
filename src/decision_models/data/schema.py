@@ -6,6 +6,7 @@ Sources emit `Example`s; everything downstream consumes only this class.
 """
 
 from collections.abc import Mapping
+from collections.abc import Sequence
 import dataclasses
 import json
 from typing import Any
@@ -45,6 +46,17 @@ class Span:
     part: int
     start: int
     end: int
+
+    def overlaps(self, part: int, start: int, end: int) -> bool:
+        """Whether characters [start, end) of part `part` overlap the span."""
+        return part == self.part and start < self.end and end > self.start
+
+
+def overlaps_any(
+    spans: Sequence[Span], part: int, start: int, end: int
+) -> bool:
+    """Whether characters [start, end) of part `part` overlap any span."""
+    return any(s.overlaps(part, start, end) for s in spans)
 
 
 @dataclasses.dataclass(frozen=True)
@@ -106,6 +118,19 @@ class Example:
     def answer(self) -> str:
         """The text of the gold option."""
         return self.options[self.gold]
+
+    def reordered(self, order: Sequence[int]) -> "Example":
+        """The example with option order[i] shown as option i."""
+        return dataclasses.replace(
+            self,
+            options=tuple(self.options[i] for i in order),
+            gold=list(order).index(self.gold),
+        )
+
+    def without_option(self, index: int) -> "Example":
+        """The example without option `index` (which must not be the gold)."""
+        keep = [i for i in range(len(self.options)) if i != index]
+        return self.reordered(keep)
 
     @property
     def has_spans(self) -> bool:

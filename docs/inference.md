@@ -18,7 +18,7 @@ choice = encoder.predict(rows[0])            # index into rows[0].options
 ```bash
 decision-models-predict model.kind=encoder model.path=runs/ultrabert_380m_lr1.5e-5 out=runs/predict/eval.jsonl
 decision-models-predict model.kind=decoder model.path=Athekunal/llm-jev-qwen3-0.6b \
-    limit=100 cite=true out=runs/predict/eval_cited.jsonl        # + top-3 ContextCite sentences
+    limit=100 citation={} out=runs/predict/eval_cited.jsonl      # + top-3 ContextCite sentences
 ```
 
 ## Local server ("Try it")
@@ -43,7 +43,7 @@ curl "http://127.0.0.1:8767/api/attribute?id=<id>"
 ```bash
 make sglang-install                                               # once
 make sglang-serve BASE=Qwen/Qwen3-4B ADAPTER=runs/qwen3_4b/adapter GPUS=0 PORT=30000
-decision-models-sglang tokenizer=runs/qwen3_4b/merged "datasets=[contractnli]" per=5
+decision-models-sglang tokenizer=runs/qwen3_4b/merged "rows.datasets=[contractnli]" rows.per=5
 make sglang-stop PORT=30000
 ```
 

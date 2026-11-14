@@ -91,7 +91,7 @@ def build_prompt(
 def suffix_ids(tokenizer: Any, k: int) -> list[list[int]]:
     """Token ids of the suffixes "1]" .. "k]" after the answer prefix."""
     head = tokenizer(_TAIL, add_special_tokens=False)["input_ids"]
-    out = []
+    out: list[list[int]] = []
     for i in range(1, k + 1):
         full = tokenizer(_TAIL + f"{i}]", add_special_tokens=False)["input_ids"]
         if full[: len(head)] != head:
@@ -485,17 +485,10 @@ class TrieDecoder(base.DecisionModel):
     def for_training(
         cls, cfg: config.DecoderTrainConfig, device: torch.device
     ) -> "TrieDecoder":
-        """The base model prepared for LoRA or full fine-tuning.
-
-        Raises:
-          ValueError: On an unknown fine-tuning mode or anchor.
-        """
+        """The base model prepared for LoRA or full fine-tuning."""
         import transformers
 
         settings, objective = cfg.model, cfg.objective
-        unknown = set(objective.anchors) - {"mass", "out", "pos"}
-        if unknown:
-            raise ValueError(f"unknown anchors {sorted(unknown)}")
         tokenizer = transformers.AutoTokenizer.from_pretrained(settings.id)
         reference = None
         if settings.finetune == "full":
@@ -503,12 +496,8 @@ class TrieDecoder(base.DecisionModel):
             reference = load_base(settings.id).to(device).eval()
             reference.config.use_cache = False
             reference.requires_grad_(False)
-        elif settings.finetune == "lora":
-            network = load_base(settings.id)
         else:
-            raise ValueError(
-                f"model.finetune is lora or full, not {settings.finetune!r}"
-            )
+            network = load_base(settings.id)
         network.config.use_cache = False
         if settings.finetune == "lora":
             network = add_lora(network, settings.lora_rank)
@@ -522,21 +511,30 @@ class TrieDecoder(base.DecisionModel):
     @classmethod
     def for_inference(
         cls,
-        settings: config.DecoderModelConfig,
+        path: str,
+        adapter: str | None = None,
         device: str | torch.device | None = None,
         merge: bool = True,
     ) -> "TrieDecoder":
-        """The base model, or with `settings.adapter` (merged by default)."""
+        """A model for scoring: `path`, with a LoRA `adapter` if given.
+
+        Args:
+          path: Hub id or local path of the (base or merged) model.
+          adapter: A saved LoRA adapter on top of `path`.
+          device: Where to put it (default: base.default_device()).
+          merge: Merge the adapter into the weights.
+        """
         import peft
         import transformers
 
         device = device or base.default_device()
-        tokenizer = transformers.AutoTokenizer.from_pretrained(settings.id)
-        network = load_base(settings.id).to(device)
-        if settings.adapter is not None:
-            network = peft.PeftModel.from_pretrained(network, settings.adapter)
+        tokenizer = transformers.AutoTokenizer.from_pretrained(path)
+        network = load_base(path).to(device)
+        if adapter is not None:
+            network = peft.PeftModel.from_pretrained(network, adapter)
             if merge:
                 network = network.merge_and_unload()
+        settings = config.DecoderModelConfig(id=path)
         return cls(network.eval(), tokenizer, device, settings)
 
     @property
@@ -554,7 +552,7 @@ class TrieDecoder(base.DecisionModel):
 
     def score_with_mass(
         self, examples: Sequence[schema.Example]
-    ) -> list[tuple[torch.Tensor, float]]:
+    ) -> list[tuple[torch.Tensor, float | None]]:
         """(s [K], root legal mass) per example.
 
         The legal mass is the probability the model puts on a valid first
@@ -566,9 +564,9 @@ class TrieDecoder(base.DecisionModel):
             self.device.type, dtype=torch.bfloat16, enabled=fp32
         )
         prompts_ = [prompt_ids(e, self.tokenizer) for e in examples]
-        out: list[tuple[torch.Tensor, float]] = [(torch.empty(0), 0.0)] * len(
-            examples
-        )
+        out: list[tuple[torch.Tensor, float | None]] = [
+            (torch.empty(0), 0.0)
+        ] * len(examples)
         budget, rows = self.settings.batch_tokens, self.settings.batch_rows
         with autocast, torch.no_grad():
             for batch in length_batches(list(map(len, prompts_)), budget, rows):

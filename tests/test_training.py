@@ -1,9 +1,11 @@
 """End-to-end smoke tests: two training steps of each family on a CPU."""
 
+import dataclasses
 import json
 import pathlib
 import shutil
 
+import omegaconf
 import pytest
 import torch
 
@@ -47,7 +49,7 @@ def _common(data_dir: pathlib.Path, out: pathlib.Path) -> dict:
         "optim.lr": 1e-3,
         "run.out": str(out),
         "run.max_steps": 2,
-        "run.mixed_precision": "no",
+        "run.mixed_precision": "'no'",  # Quoted: bare no is False.
     }
 
 
@@ -57,7 +59,7 @@ def _dotlist(values: dict) -> list[str]:
 
 def test_train_encoder(data_dir, encoder_dir, encoder_format, tmp_path) -> None:
     out = tmp_path / "enc"
-    raw = config.load(
+    raw = config.merge(
         config.EncoderTrainConfig,
         None,
         _dotlist(
@@ -72,7 +74,7 @@ def test_train_encoder(data_dir, encoder_dir, encoder_format, tmp_path) -> None:
             }
         ),
     )
-    cfg = config.resolve(raw)
+    cfg = omegaconf.OmegaConf.to_object(raw)
     trainer.launch(
         cfg,
         raw,
@@ -92,24 +94,24 @@ def test_train_encoder(data_dir, encoder_dir, encoder_format, tmp_path) -> None:
 
     # Paper analysis: option coupling on the same run.
     coupling_out = coupling.analyse(out, rows, shuffles=1, seed=0)
-    assert coupling_out["rows"] == len(rows)
-    assert coupling_out["loss"] == "sigmoid_norm"
+    assert coupling_out.rows == len(rows)
+    assert coupling_out.loss == "sigmoid_norm"
+    assert set(coupling_out.shuffle.by_dataset) == {"toy0", "toy1"}
+    json.dumps(dataclasses.asdict(coupling_out))
 
     # Evidence head on the frozen run (gold spans only).
-    evidence_cfg = config.resolve(
-        config.load(
-            config.EvidenceConfig,
-            None,
-            [
-                f"encoder.run={out}",
-                f"data.source={data_dir}",
-                "data.labels=gold",
-                "data.val_frac=0.25",
-                "train.epochs=1",
-                "train.rows_per_step=2",
-                f"out={out}/evidence",
-            ],
-        )
+    evidence_cfg = config.load(
+        config.EvidenceConfig,
+        None,
+        [
+            f"encoder.run={out}",
+            f"data.source={data_dir}",
+            "data.labels=gold",
+            "data.val_frac=0.25",
+            "train.epochs=1",
+            "train.rows_per_step=2",
+            f"out={out}/evidence",
+        ],
     )
     (out / "evidence").mkdir()
     model.unwrapped.requires_grad_(False)
@@ -122,7 +124,7 @@ def test_train_encoder(data_dir, encoder_dir, encoder_format, tmp_path) -> None:
 @pytest.mark.parametrize("finetune", ["lora", "full"])
 def test_train_decoder(data_dir, decoder_dir, tmp_path, finetune) -> None:
     out = tmp_path / f"dec_{finetune}"
-    raw = config.load(
+    raw = config.merge(
         config.DecoderTrainConfig,
         None,
         _dotlist(
@@ -136,7 +138,7 @@ def test_train_decoder(data_dir, decoder_dir, tmp_path, finetune) -> None:
             }
         ),
     )
-    cfg = config.resolve(raw)
+    cfg = omegaconf.OmegaConf.to_object(raw)
     trainer.launch(
         cfg, raw, lambda device: decoder.TrieDecoder.for_training(cfg, device)
     )
@@ -150,7 +152,7 @@ def test_schedule_warms_up_then_decays() -> None:
     param = torch.nn.Parameter(torch.zeros(1))
     opt = torch.optim.SGD([param], lr=1.0)
     sched = trainer.linear_schedule(opt, total=10, warmup=2, min_lr_ratio=0.1)
-    lrs = []
+    lrs: list[float] = []
     for _ in range(10):
         lrs.append(sched.get_last_lr()[0])
         opt.step()

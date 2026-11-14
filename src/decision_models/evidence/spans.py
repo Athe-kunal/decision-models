@@ -155,7 +155,7 @@ async def rewards(
         masks += [~keep, keep]
     suffixes = decoder.candidates(tok, len(example.options))[0]
     gold = example.gold
-    prompts_ = []
+    prompts_: list[list[int]] = []
     for keep in masks:
         ablated = sentences_lib.ablate(example, sources, keep)
         prompts_.append(decoder.prompt_ids(ablated, tok))
@@ -250,7 +250,7 @@ def labelled_ids(out: pathlib.Path) -> set[str]:
     if not out.exists():
         return set()
     lines = out.read_text().splitlines(keepends=True)
-    done = set()
+    done: set[str] = set()
     for number, line in enumerate(lines):
         try:
             done.add(json.loads(line)["id"])

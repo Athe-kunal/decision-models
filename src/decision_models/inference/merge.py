@@ -18,8 +18,7 @@ from decision_models.models import decoder
 def main() -> None:
     """Writes the merged model and tokenizer to `out`."""
     cfg, _ = config.from_command_line(config.MergeConfig, __doc__)
-    settings = config.DecoderModelConfig(id=cfg.model, adapter=cfg.adapter)
-    model = decoder.TrieDecoder.for_inference(settings, "cpu")
+    model = decoder.TrieDecoder.for_inference(cfg.model, cfg.adapter, "cpu")
     out = pathlib.Path(cfg.out)
     model.network.save_pretrained(out)
     model.tokenizer.save_pretrained(out)

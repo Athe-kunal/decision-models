@@ -3,7 +3,7 @@
 Usage:
   decision-models-cite-eval model.kind=decoder \
       model.path=Athekunal/llm-jev-qwen3-0.6b \
-      per=50 out=runs/attribution/qwen3_0.6b
+      rows.per=50 out=runs/attribution/qwen3_0.6b
 
 Each row's sentence weights are scored by:
 - spans: precision, recall, f_beta of the top 3, average precision, top-1
@@ -17,29 +17,27 @@ Writes <out>/rows.jsonl and summary.json.
 """
 
 from collections import defaultdict
+from collections.abc import Callable
+from collections.abc import Mapping
 from collections.abc import Sequence
 import dataclasses
 import json
 import pathlib
-import time
 from typing import Any
 
 from loguru import logger
 import numpy as np
-import torch
 
 from decision_models import config
 from decision_models import models
 from decision_models.citation import cite
 from decision_models.citation import context_cite
-from decision_models.citation import masked
 from decision_models.data import sampling
 from decision_models.data import schema
 from decision_models.data import storage
 from decision_models.evidence import metrics
 from decision_models.evidence import sentences as sentences_lib
 from decision_models.models import base
-from decision_models.models import decoder
 
 TOP_K = (1, 3, 5)
 METRICS = (
@@ -55,36 +53,55 @@ METRICS = (
 )
 
 
-def ablated_scores(
-    model: base.DecisionModel,
-    example: schema.Example,
+def weight_metrics(
+    row: schema.Example,
     sentences: Sequence[sentences_lib.Sentence],
-    keep: np.ndarray,
-    answer: int,
-    cfg: config.CiteConfig,
-) -> np.ndarray:
-    """Logit q(answer) for every keep row [n, S], as ContextCite scores them."""
-    if isinstance(model, decoder.TrieDecoder) and cfg.removal == "full":
-        ids, owner, _ = masked.token_owners(model.tokenizer, example, sentences)
-        scores = masked.score_keep(
-            model.unwrapped,
-            model.tokenizer,
-            ids,
-            owner,
-            keep,
-            len(example.options),
-            model.device,
-            cfg.budget,
+    weights: Mapping[str, np.ndarray],
+    targets: Callable[[np.ndarray], np.ndarray],
+    lds_masks: int = 32,
+    seed: int = 1_000_000,
+) -> dict[str, dict[str, float]]:
+    """Span metrics, LDS and drop@k of each named sentence weighting.
+
+    Every weighting shares the held-out ablations, and one `targets` call
+    scores them together with every weighting's top-k removals.
+
+    Args:
+      row: The row, with gold spans.
+      sentences: Its sentences.
+      weights: Method name -> one weight per sentence.
+      targets: keep masks [n, S] -> logit q(answer) [n] under them.
+      lds_masks: Held-out random ablations for the LDS.
+      seed: Seeds them (unseen by any surrogate).
+    """
+    from scipy.stats import spearmanr
+
+    n = len(sentences)
+    held = sentences_lib.ablation_masks(lds_masks, n, seed=seed)  # [L, S]
+    ks = [k for k in TOP_K if k < n]
+    keep: list[np.ndarray] = [np.ones(n, bool), *held]
+    where: dict[tuple[str, int], int] = {}
+    for name, w in weights.items():
+        order = np.argsort(-w, kind="stable")
+        for k in ks:
+            mask = np.ones(n, bool)
+            mask[order[:k]] = False
+            where[name, k] = len(keep)
+            keep.append(mask)
+    y = targets(np.stack(keep))
+    out: dict[str, dict[str, float]] = {}
+    for name, w in weights.items():
+        lds = (
+            spearmanr(held @ w, y[1 : 1 + len(held)]).statistic
+            if w.std() > 0
+            else 0.0
         )
-        return np.array([context_cite.logit_q(s, answer) for s in scores])
-    return context_cite.ablation_targets(
-        model, example, sentences, keep, answer
-    )
-
-
-def _sync(model: base.DecisionModel) -> None:
-    if model.device.type == "cuda":
-        torch.cuda.synchronize()
+        out[name] = {
+            **(metrics.span_metrics(row, sentences, w) or {}),
+            "lds": float(lds),
+            **{f"drop@{k}": float(y[0] - y[where[name, k]]) for k in ks},
+        }
+    return out
 
 
 def evaluate_row(
@@ -95,42 +112,29 @@ def evaluate_row(
     seed: int = 1_000_000,
 ) -> dict[str, Any]:
     """One row's ContextCite weights and metrics."""
-    _sync(model)
-    start = time.time()
-    result = cite.cite(model, row, cfg)
-    _sync(model)
-    seconds = time.time() - start
-    n, answer, w = len(result.sentences), result.answer, result.weights
-    order = np.argsort(-w, kind="stable")
-    ks = [k for k in TOP_K if k < n]
-    held = sentences_lib.ablation_masks(lds_masks, n, seed=seed)  # Unseen.
-    keep = np.ones((1 + len(held) + len(ks), n), bool)
-    keep[1 : 1 + len(held)] = held
-    for i, k in enumerate(ks):
-        keep[1 + len(held) + i, order[:k]] = False
-    y = ablated_scores(model, row, result.sentences, keep, answer, cfg)
-    from scipy.stats import spearmanr
-
-    lds = (
-        spearmanr(held @ w, y[1 : 1 + len(held)]).statistic
-        if w.std() > 0
-        else 0.0
+    result, seconds = base.timed(
+        model.device, lambda: cite.cite(model, row, cfg)
     )
+    exact = cite.scorer(model, cfg, exact=True)
+
+    def targets(keep: np.ndarray) -> np.ndarray:
+        return context_cite.ablation_targets(
+            model, row, result.sentences, keep, result.answer, exact
+        )
+
+    scores = weight_metrics(
+        row, result.sentences, {"w": result.weights}, targets, lds_masks, seed
+    )["w"]
     return {
         "id": row.id,
         "source": row.source,
-        "sources": n,
-        "answer": answer,
+        "sources": len(result.sentences),
+        "answer": result.answer,
         "gold": row.gold,
         "q": result.q,
         "seconds": seconds,
-        **(metrics.span_metrics(row, result.sentences, w) or {}),
-        "lds": float(lds),
-        **{
-            f"drop@{k}": float(y[0] - y[1 + len(held) + i])
-            for i, k in enumerate(ks)
-        },
-        "w": w.tolist(),
+        **scores,
+        "w": result.weights.tolist(),
     }
 
 
@@ -167,14 +171,16 @@ def table(summary: dict[str, dict[str, float]]) -> str:
 
 
 def load_rows(cfg: config.CiteEvalConfig) -> list[schema.Example]:
-    """`per` seeded rows per dataset whose gold spans cover >= 1 sentence."""
-    rows = storage.load_examples(cfg.source, cfg.split)
+    """Rows whose gold spans cover a sentence, `cfg.rows.per` per dataset."""
+    rows = storage.load_examples(cfg.rows.source, cfg.rows.split)
     if cfg.generated_spans:
         import datasets
 
         generated = {
             r["id"]: r["spans"]
-            for r in datasets.load_dataset(cfg.source, "spans", split="train")
+            for r in datasets.load_dataset(
+                cfg.rows.source, "spans", split="train"
+            )
         }
         rows = [
             dataclasses.replace(
@@ -183,14 +189,9 @@ def load_rows(cfg: config.CiteEvalConfig) -> list[schema.Example]:
             for r in rows
             if generated.get(r.id)
         ]
-    keep = []
-    for r in rows:
-        if not r.spans or (cfg.datasets and r.source not in cfg.datasets):
-            continue
-        sents = sentences_lib.split(r)
-        if len(sents) >= 2 and sentences_lib.gold_indices(r, sents):
-            keep.append(r)
-    return sampling.per_dataset(keep, cfg.per, seed=0)
+    return sampling.select_rows(
+        rows, cfg.rows, lambda r: sentences_lib.has_evidence(r, cover=True)
+    )
 
 
 def main() -> None:
@@ -203,7 +204,7 @@ def main() -> None:
         cite.cite(model, rows[0], cfg.citation)  # Compiles outside the timings.
     out = pathlib.Path(cfg.out)
     out.mkdir(parents=True, exist_ok=True)
-    done = []
+    done: list[dict[str, Any]] = []
     with open(out / "rows.jsonl", "w") as f:
         for i, row in enumerate(rows):
             r = evaluate_row(model, row, cfg.citation, cfg.lds_masks)

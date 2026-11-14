@@ -20,13 +20,11 @@ probabilities and the evidence. The page reads this JSON API:
                                   evidence head, its token scores
 """
 
-import collections
 import dataclasses
-import json
+import functools
 import pathlib
 import random
 import threading
-import time
 from typing import Any
 
 from loguru import logger
@@ -35,8 +33,8 @@ import torch
 from decision_models import config
 from decision_models import models
 from decision_models.citation import cite
+from decision_models.data import sampling
 from decision_models.data import schema
-from decision_models.data import storage
 from decision_models.evidence import head as head_lib
 from decision_models.evidence import metrics
 from decision_models.evidence import sentences as sentences_lib
@@ -46,93 +44,46 @@ from decision_models.models import encoder
 PAGE = pathlib.Path(__file__).with_name("page.html")
 
 
-@dataclasses.dataclass
-class Evidence:
-    """A loaded evidence head and its word threshold."""
-
-    head: head_lib.EvidenceHead
-    threshold: float
-
-
-def load_evidence(
-    run: str | pathlib.Path, model: base.DecisionModel
-) -> Evidence:
-    """The evidence head of a `decision-models-train-evidence` run.
-
-    Raises:
-      ValueError: If the model is not an encoder.
-    """
-    if not isinstance(model, encoder.MaskedEncoder):
-        raise ValueError("the evidence head needs an encoder model")
-    run = pathlib.Path(run)
-    cfg_file = next(run.glob("config*.yaml"))
-    cfg: config.EvidenceConfig = config.resolve(
-        config.load(config.EvidenceConfig, cfg_file)
-    )  # type: ignore[assignment]
-    hidden = model.unwrapped.model.config.hidden_size
-    head = head_lib.EvidenceHead(hidden, cfg.head.width, cfg.head.dropout)
-    head.load_state_dict(torch.load(run / "head.pt", map_location="cpu"))
-    threshold_files = sorted(run.glob("threshold*.json"))
-    threshold = (
-        json.loads(threshold_files[0].read_text())["threshold"]
-        if threshold_files
-        else 0.5
-    )
-    return Evidence(head.to(model.device).eval(), threshold)
-
-
-def _timed(model: base.DecisionModel, fn: Any) -> tuple[Any, float]:
-    if model.device.type == "cuda":
-        torch.cuda.synchronize()
-    start = time.perf_counter()
-    result = fn()
-    if model.device.type == "cuda":
-        torch.cuda.synchronize()
-    return result, time.perf_counter() - start
-
-
-def shuffled(
-    example: schema.Example, seed: str
-) -> tuple[schema.Example, list[int]]:
-    """The example with its options in a seeded order, and that order."""
-    order = list(range(len(example.options)))
-    random.Random(seed).shuffle(order)
-    return (
-        dataclasses.replace(
-            example,
-            options=tuple(example.options[i] for i in order),
-            gold=order.index(example.gold),
-        ),
-        order,
-    )
-
-
 def make_app(
     model: base.DecisionModel,
     rows: list[schema.Example],
     cfg: config.ServeConfig,
-    evidence: Evidence | None = None,
+    evidence: head_lib.Trained | None = None,
 ) -> Any:
-    """The FastAPI app over a loaded model and its rows."""
+    """The FastAPI app over a loaded model and its rows.
+
+    Raises:
+      ValueError: If an evidence head is given with a non-encoder model.
+    """
     import fastapi
     from fastapi import responses
 
+    if evidence is not None and not isinstance(model, encoder.MaskedEncoder):
+        raise ValueError("the evidence head needs an encoder model")
+    page = PAGE.read_text()
     by_id = {r.id: r for r in rows}
-    by_source: dict[str, list[str]] = collections.defaultdict(list)
-    for r in rows:
-        by_source[r.source].append(r.id)
-    methods = (["contextcite"] if cfg.cite else []) + (
+    groups = sampling.by_source(rows)
+    ids = {source: [r.id for r in rs] for source, rs in groups.items()}
+    span_ids = {
+        source: [r.id for r in rs if r.has_spans]
+        for source, rs in groups.items()
+    }
+    datasets_info = [
+        {"id": s, "rows": len(ids[s]), "withSpans": len(span_ids[s])}
+        for s in sorted(groups)
+    ]
+    methods = (["contextcite"] if cfg.citation else []) + (
         ["evidence"] if evidence else []
     )
     info = {
         "model": cfg.model.path,
         "kind": cfg.model.kind,
         "adapter": cfg.model.adapter,
-        "data": f"{cfg.source} ({cfg.split})",
+        "data": f"{cfg.rows.source} ({cfg.rows.split})",
         "methods": methods,
-        "removal": cfg.citation.removal if cfg.cite else None,
+        "removal": cfg.citation.removal if cfg.citation else None,
     }
-    if cfg.cite:
+    if cfg.citation:
         cite.prepare(model, cfg.citation)
     lock = threading.Lock()  # One model, one request at a time.
     app = fastapi.FastAPI()
@@ -142,9 +93,13 @@ def make_app(
             raise fastapi.HTTPException(404, f"unknown row {row_id}")
         return by_id[row_id]
 
+    @functools.cache
+    def sentences(row_id: str) -> list[sentences_lib.Sentence]:
+        return sentences_lib.split(by_id[row_id])
+
     @app.get("/", response_class=responses.HTMLResponse)
-    def page() -> str:
-        return PAGE.read_text()
+    def index() -> str:
+        return page
 
     @app.get("/api/info")
     def get_info() -> dict[str, Any]:
@@ -152,23 +107,13 @@ def make_app(
 
     @app.get("/api/datasets")
     def datasets() -> list[dict[str, Any]]:
-        return [
-            {
-                "id": s,
-                "rows": len(ids),
-                "withSpans": sum(by_id[i].has_spans for i in ids),
-            }
-            for s, ids in sorted(by_source.items())
-        ]
+        return datasets_info
 
     @app.get("/api/sample")
     def sample(source: str = "", spans: int = 0) -> dict[str, str]:
+        pools = span_ids if spans else ids
         pool = [
-            i
-            for s, ids in by_source.items()
-            if not source or s == source
-            for i in ids
-            if not spans or by_id[i].has_spans
+            i for s, p in pools.items() if not source or s == source for i in p
         ]
         if not pool:
             raise fastapi.HTTPException(404, "no rows match")
@@ -177,14 +122,15 @@ def make_app(
     @app.get("/api/row")
     def row(id: str, shuffle: int = 0, seed: int = 0) -> dict[str, Any]:  # noqa: A002
         r = get(id)
-        shown, order = (
-            shuffled(r, f"{id}:{seed}")
-            if shuffle
-            else (r, list(range(len(r.options))))
-        )
+        order = list(range(len(r.options)))
+        if shuffle:
+            random.Random(f"{id}:{seed}").shuffle(order)
+        shown = r.reordered(order)
         with lock:
-            s, seconds = _timed(model, lambda: model.score([shown])[0])
-        sents = sentences_lib.split(r)
+            s, seconds = base.timed(
+                model.device, lambda: model.score([shown])[0]
+            )
+        sents = sentences(id)
         gold = sentences_lib.gold_indices(r, sents)
         return {
             "id": id,
@@ -218,18 +164,17 @@ def make_app(
             raise fastapi.HTTPException(400, "no citation method loaded")
         r = get(id)
         out: dict[str, Any] = {}
-        if cfg.cite:
+        if cfg.citation:
             with lock:
-                result, seconds = _timed(
-                    model, lambda: cite.cite(model, r, cfg.citation)
+                result, seconds = base.timed(
+                    model.device, lambda: cite.cite(model, r, cfg.citation)
                 )
             w = result.weights.tolist()
+            top = cite.top_sentences(r, result, max(3, cfg.citation.top_k))
             out["contextcite"] = {
                 "w": w,
-                "top": sorted(
-                    (j for j, v in enumerate(w) if v > 0), key=lambda j: -w[j]
-                )[:3],
-                "evidence": cite.top_sentences(r, result, cfg.citation.top_k),
+                "top": [x["index"] for x in top[:3]],
+                "evidence": top[: cfg.citation.top_k],
                 "answer": result.answer,
                 "seconds": seconds,
                 "metrics": metrics.span_metrics(r, result.sentences, w)
@@ -238,8 +183,8 @@ def make_app(
             }
         if evidence is not None:
             with lock:
-                pred, seconds = _timed(
-                    model,
+                pred, seconds = base.timed(
+                    model.device,
                     lambda: head_lib.predict(model, evidence.head, r),  # type: ignore[arg-type]
                 )
             out["evidence"] = {
@@ -271,8 +216,12 @@ def main() -> None:
 
     cfg, _ = config.from_command_line(config.ServeConfig, __doc__)
     model = models.load(cfg.model)
-    evidence = load_evidence(cfg.evidence, model) if cfg.evidence else None
-    rows = storage.load_examples(cfg.source, cfg.split)
+    evidence = None
+    if cfg.evidence:
+        if not isinstance(model, encoder.MaskedEncoder):
+            raise ValueError("evidence= needs model.kind=encoder")
+        evidence = head_lib.load(cfg.evidence, model)
+    rows = sampling.select(cfg.rows)
     logger.info(
         "serving {} rows on http://{}:{}/", len(rows), cfg.host, cfg.port
     )

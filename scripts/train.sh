@@ -15,17 +15,19 @@ cd "$(dirname "$0")/.."
 
 cfg=${1:?config yaml}; gpus=${2:-0}; shift $(( $# < 2 ? $# : 2 ))
 if [[ $(basename "$cfg") == qwen* ]]; then
-  module=decision_models.training.decoder; default=configs/accelerate/fsdp2.yaml
+  module=decision_models.training.decoder; schema=DecoderTrainConfig
+  default=configs/accelerate/fsdp2.yaml
 else
-  module=decision_models.training.encoder; default=configs/accelerate/ddp.yaml
+  module=decision_models.training.encoder; schema=EncoderTrainConfig
+  default=configs/accelerate/ddp.yaml
 fi
 ACCELERATE_CONFIG=${ACCELERATE_CONFIG:-$default}
 PORT=${PORT:-$((29500 + RANDOM % 1000))}
-out=$(.venv/bin/python - "$cfg" "$@" <<'PY'
+# Validates the config (as training will) and reads its run directory.
+out=$(.venv/bin/python - "$schema" "$cfg" "$@" <<'PY'
 import sys
-from omegaconf import OmegaConf
-cfg = OmegaConf.merge(OmegaConf.load(sys.argv[1]), OmegaConf.from_dotlist(sys.argv[2:]))
-print(cfg.run.out)
+from decision_models import config
+print(config.load(getattr(config, sys.argv[1]), sys.argv[2], sys.argv[3:]).run.out)
 PY
 )
 nproc=$(( $(tr -cd , <<< "$gpus" | wc -c) + 1 ))

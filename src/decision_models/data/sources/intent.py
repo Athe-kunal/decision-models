@@ -64,7 +64,7 @@ def clinc150() -> base.Split:
     import pandas as pd  # pylint: disable=import-outside-toplevel
 
     names = clinc_names()
-    out = {}
+    out: base.Split = {}
     for split in ("train", "validation"):
         data = pd.read_parquet(
             download.local_path(

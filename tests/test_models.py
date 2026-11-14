@@ -1,5 +1,6 @@
 import random
 
+import omegaconf
 import peft
 import pytest
 import torch
@@ -9,21 +10,6 @@ from decision_models.losses import option
 from decision_models.losses import trie
 from decision_models.models import decoder
 from decision_models.models import encoder
-
-
-@pytest.fixture(scope="module")
-def trie_decoder(decoder_dir) -> decoder.TrieDecoder:
-    settings = config.DecoderModelConfig(id=str(decoder_dir))
-    return decoder.TrieDecoder.for_inference(settings, "cpu")
-
-
-@pytest.fixture(scope="module")
-def masked_encoder(encoder_dir, encoder_format) -> encoder.MaskedEncoder:
-    model_cfg = config.EncoderModelConfig(id=str(encoder_dir), attention="sdpa")
-    return encoder.MaskedEncoder.build(
-        model_cfg, encoder_format, "cpu", torch.float32, "sigmoid_norm"
-    )
-
 
 # --- Decoder ---------------------------------------------------------------
 
@@ -48,7 +34,7 @@ def test_encoding_follows_the_gold_path(trie_decoder, example) -> None:
 
 
 def _naive_scores(model, prompt, suffixes) -> torch.Tensor:
-    out = []
+    out: list[torch.Tensor] = []
     for s in suffixes:
         ids = torch.tensor([prompt + s])
         logp = torch.log_softmax(model(input_ids=ids).logits[0].float(), -1)
@@ -70,13 +56,11 @@ def test_trie_scorers_agree_with_full_sequences(trie_decoder, example) -> None:
 
 
 def test_trie_loss_with_lora_has_zero_anchors_at_start(
-    decoder_dir, example
+    decoder_dir, trie_decoder, example
 ) -> None:
     base = decoder.load_base(str(decoder_dir), dtype=torch.float32)
     model = decoder.add_lora(base, rank=4)
-    tok = decoder.TrieDecoder.for_inference(
-        config.DecoderModelConfig(id=str(decoder_dir)), "cpu"
-    ).tokenizer
+    tok = trie_decoder.tokenizer
     ex = decoder.encode(example, tok, random.Random(1))
     terms = trie.compute(model, ex, "cpu", tok.pad_token_id)
     # A fresh adapter is the identity (LoRA B = 0), so p_theta = p0.
@@ -165,6 +149,12 @@ def test_option_losses_match_their_definition(kind, weight) -> None:
     )
 
 
-def test_unknown_option_loss() -> None:
-    with pytest.raises(ValueError, match="loss is one of"):
-        option.loss(torch.zeros(2), 0, "hinge")
+def test_unknown_option_loss_fails_at_config_load() -> None:
+    with pytest.raises(
+        omegaconf.errors.ValidationError, match="expected one of"
+    ):
+        config.load(
+            config.EncoderTrainConfig,
+            None,
+            ["model.id=x", "run.out=y", "optim.loss=hinge"],
+        )

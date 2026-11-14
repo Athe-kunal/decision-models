@@ -58,7 +58,7 @@ def mc_example(
 @base.register("reclor", splits={"train": "train", "validation": "val"})
 def reclor() -> base.Split:
     """ReClor: passage + question -> one of 4 options (train / val)."""
-    out = {}
+    out: base.Split = {}
     for split, filename in (
         ("train", "train.json"),
         ("validation", "val.json"),
@@ -82,7 +82,7 @@ def reclor() -> base.Split:
 @base.register("logiqa2", splits={"train": "train", "validation": "dev"})
 def logiqa2() -> base.Split:
     """LogiQA 2.0 (English MRC): passage + question -> 4 options."""
-    out = {}
+    out: base.Split = {}
     for split, filename in (("train", "train.txt"), ("validation", "dev.txt")):
         with open(download.local_path("logiqa2", filename)) as f:
             data = [json.loads(line) for line in f if line.strip()]
@@ -121,7 +121,7 @@ def cosmosqa_stratum(example: schema.Example) -> str:
 )
 def cosmosqa() -> base.Split:
     """CosmosQA: context + question -> 4 options (train / valid)."""
-    out = {}
+    out: base.Split = {}
     for split, filename in (
         ("train", "train.csv"),
         ("validation", "valid.csv"),
@@ -146,7 +146,7 @@ def cosmosqa() -> base.Split:
 @base.register("piqa", splits={"train": "train", "validation": "valid"})
 def piqa() -> base.Split:
     """PIQA: goal -> the better of two solutions (train / valid)."""
-    out = {}
+    out: base.Split = {}
     for split, stem in (("train", "train"), ("validation", "valid")):
         with open(download.local_path("piqa", f"{stem}.jsonl")) as f:
             data = [json.loads(line) for line in f if line.strip()]
@@ -174,7 +174,7 @@ def piqa() -> base.Split:
 @base.register("anli", splits={"train": "train", "validation": "dev"})
 def anli() -> base.Split:
     """alpha-NLI (ART): two observations -> the more plausible hypothesis."""
-    out = {}
+    out: base.Split = {}
     path = download.local_path("anli", "alphanli-train-dev.zip")
     with zipfile.ZipFile(path) as z:
         for split, stem in (("train", "train"), ("validation", "dev")):
@@ -216,11 +216,11 @@ def quality() -> base.Split:
 
     Gold: the release's gold_label (annotators' majority), 1-based.
     """
-    out = {}
+    out: base.Split = {}
     path = download.local_path("quality", "QuALITY.v1.0.1.zip")
     with zipfile.ZipFile(path) as z:
         for split, stem in (("train", "train"), ("validation", "dev")):
-            examples = []
+            examples: list[schema.Example] = []
             for line in (
                 z.read(f"QuALITY.v1.0.1.htmlstripped.{stem}")
                 .decode()

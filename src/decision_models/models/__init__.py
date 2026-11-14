@@ -12,20 +12,14 @@ def load(ref: config.ModelRef, device: str | None = None) -> base.DecisionModel:
     Args:
       ref: Which model to load.
       device: Where to put it (default: base.default_device()).
-
-    Raises:
-      ValueError: On an unknown model kind.
     """
     device = device or base.default_device()
-    if ref.kind == config.DECODER:
+    if ref.kind == "decoder":
         from decision_models.models import decoder
 
-        settings = config.DecoderModelConfig(id=ref.path, adapter=ref.adapter)
-        return decoder.TrieDecoder.for_inference(settings, device)
-    if ref.kind == config.ENCODER:
-        from decision_models.models import encoder
+        return decoder.TrieDecoder.for_inference(ref.path, ref.adapter, device)
+    from decision_models.models import encoder
 
-        return encoder.MaskedEncoder.from_run(
-            ref.path, device, getattr(torch, ref.dtype), ref.attention
-        )
-    raise ValueError(f"model.kind is decoder or encoder, not {ref.kind!r}")
+    return encoder.MaskedEncoder.from_run(
+        ref.path, device, getattr(torch, ref.dtype), ref.attention
+    )

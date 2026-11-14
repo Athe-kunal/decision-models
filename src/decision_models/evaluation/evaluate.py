@@ -14,9 +14,11 @@ eval_<tag>_labels.json (gold vs predicted label shares, see `label_shares`).
 """
 
 import collections
+from collections.abc import Mapping
 from collections.abc import Sequence
 import dataclasses
 import json
+import math
 import pathlib
 import random
 import time
@@ -29,9 +31,7 @@ from decision_models import config
 from decision_models import models
 from decision_models.data import sampling
 from decision_models.data import schema
-from decision_models.data import storage
 from decision_models.models import base
-from decision_models.models import decoder
 
 Metrics = dict[str, dict[str, float]]
 
@@ -61,14 +61,6 @@ class RowResult:
     gen_correct: bool | None = None
 
 
-def _scores(
-    model: base.DecisionModel, rows: Sequence[schema.Example]
-) -> list[tuple[torch.Tensor, float | None]]:
-    if isinstance(model, decoder.TrieDecoder):
-        return model.score_with_mass(rows)  # type: ignore[return-value]
-    return [(s, None) for s in model.score(rows)]
-
-
 def score_rows(
     model: base.DecisionModel,
     rows: Sequence[schema.Example],
@@ -81,7 +73,8 @@ def score_rows(
     Args:
       model: Any decision model.
       rows: The rows.
-      gen_ids: Decoders: rows that are also answered in text mode.
+      gen_ids: Rows also answered in text mode, where the model supports it
+        (decoders).
       examples_out: If given, receives one readable record per text-mode row.
       chunk: Rows per scoring call (for progress logs).
     """
@@ -90,11 +83,13 @@ def score_rows(
     start = time.time()
     for i in range(0, len(rows), chunk):
         part = rows[i : i + chunk]
-        for row, (s, mass) in zip(part, _scores(model, part), strict=True):
+        scored = model.score_with_mass(part)
+        for row, (s, mass) in zip(part, scored, strict=True):
             prediction = int(s.argmax())
             gen_valid = gen_correct = None
-            if row.id in gen_ids and isinstance(model, decoder.TrieDecoder):
-                text, named = model.generate_answer(row)
+            reply = model.generate_answer(row) if row.id in gen_ids else None
+            if reply is not None:
+                text, named = reply
                 gen_valid, gen_correct = named is not None, named == row.gold
                 if examples_out is not None:
                     examples_out.append(
@@ -151,6 +146,26 @@ def _mean(values: Sequence[float]) -> float:
     return sum(values) / len(values)
 
 
+def macro_average(
+    per_source: Mapping[str, Mapping[str, float]],
+) -> dict[str, float]:
+    """The mean over datasets of each metric every dataset has ("ALL").
+
+    Row counts ("rows", "gen_rows") are not averaged; NaNs are skipped.
+    """
+    rows = list(per_source.values())
+    keys = [
+        k
+        for k in rows[0]
+        if k not in ("rows", "gen_rows") and all(k in m for m in rows)
+    ]
+    out: dict[str, float] = {}
+    for k in keys:
+        values = [float(m[k]) for m in rows if not math.isnan(float(m[k]))]
+        out[k] = _mean(values) if values else float("nan")
+    return out
+
+
 def summarize(results: Sequence[RowResult]) -> Metrics:
     """Per-dataset metrics and rows; "ALL" averages the datasets.
 
@@ -178,18 +193,7 @@ def summarize(results: Sequence[RowResult]) -> Metrics:
         if gen:
             m["gen_rows"] = len(gen)
         metrics[name] = m
-    keys = [
-        k
-        for k in (
-            "accuracy",
-            "log_p_gold",
-            "root_legal_mass",
-            "gen_valid",
-            "gen_correct",
-        )
-        if all(k in m for m in metrics.values())
-    ]
-    metrics["ALL"] = {k: _mean([m[k] for m in metrics.values()]) for k in keys}
+    metrics["ALL"] = macro_average(metrics)
     return metrics
 
 
@@ -205,27 +209,14 @@ def label_shares(
     A model that prefers a label (not a slot) shows predicted >> gold for it
     whatever its position; shuffling rules out position bias.
     """
-    by_source: dict[str, list[schema.Example]] = collections.defaultdict(list)
-    for r in rows:
-        by_source[r.source].append(r)
-    fixed = {
-        source: rs
-        for source, rs in by_source.items()
-        if len({r.options for r in rs}) == 1
-        and len(rs[0].options) <= max_labels
-    }
+    fixed = sampling.fixed_label_sources(rows, max_labels)
     jobs: list[tuple[schema.Example, schema.Example, list[int]]] = []
     for rs in fixed.values():
         for r in rs:
             for k in range(shuffles):
                 order = list(range(len(r.options)))
                 random.Random(f"labels:{r.id}:{k}").shuffle(order)
-                shown = dataclasses.replace(
-                    r,
-                    options=tuple(r.options[i] for i in order),
-                    gold=order.index(r.gold),
-                )
-                jobs.append((r, shown, order))
+                jobs.append((r, r.reordered(order), order))
     scores = model.score([shown for _, shown, _ in jobs])
     gold: dict[str, collections.Counter[str]] = collections.defaultdict(
         collections.Counter
@@ -321,14 +312,13 @@ def log_summary(tag: str, metrics: Metrics) -> None:
 def main() -> None:
     """Evaluates a model on one part of a split."""
     cfg, _ = config.from_command_line(config.EvaluateConfig, __doc__)
-    rows = sampling.select_part(
-        storage.load_examples(cfg.source, cfg.split),
-        cfg.part,
-        cfg.eval_per,
-        cfg.seed,
-        sampling.read_ids(cfg.rows_file),
+    ids = sampling.read_ids(cfg.rows_file)
+    rows = sampling.select(
+        cfg.rows, None if ids is None else lambda r: r.id in ids
     )
-    gen_ids = {r.id for r in sampling.per_dataset(rows, cfg.gen_per, cfg.seed)}
+    gen_ids = {
+        r.id for r in sampling.per_dataset(rows, cfg.gen_per, cfg.rows.seed)
+    }
     model = models.load(cfg.model)
     examples: list[dict[str, Any]] = []
     results = score_rows(

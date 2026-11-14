@@ -123,3 +123,56 @@ def encoder_format() -> config.FormatConfig:
     return config.FormatConfig(
         template="decision_mlm", yes_token="Y", no_token="N"
     )
+
+
+@pytest.fixture(scope="session")
+def trie_decoder(decoder_dir: pathlib.Path):
+    from decision_models.models import decoder
+
+    return decoder.TrieDecoder.for_inference(str(decoder_dir), device="cpu")
+
+
+@pytest.fixture(scope="session")
+def masked_encoder(encoder_dir: pathlib.Path, encoder_format):
+    from decision_models.models import encoder
+
+    model_cfg = config.EncoderModelConfig(id=str(encoder_dir), attention="sdpa")
+    return encoder.MaskedEncoder.build(
+        model_cfg, encoder_format, "cpu", torch.float32, "sigmoid_norm"
+    )
+
+
+@pytest.fixture(scope="session")
+def evidence_head(masked_encoder):
+    from decision_models.evidence import head as head_lib
+
+    return head_lib.build(
+        masked_encoder, config.EvidenceHeadConfig(width=8)
+    ).eval()
+
+
+def toy_sentences(example: schema.Example) -> list:
+    """The example's sentences split on ". ", without nltk's model."""
+    from decision_models.evidence import sentences as sentences_lib
+
+    text = example.parts[0].text
+    out: list[sentences_lib.Sentence] = []
+    start = 0
+    for piece in text.split(". "):
+        piece = piece if piece.endswith(".") else piece + "."
+        begin = text.index(piece, start)
+        out.append(
+            sentences_lib.Sentence(
+                0, begin, begin + len(piece), text[start:begin]
+            )
+        )
+        start = begin + len(piece)
+    return out
+
+
+@pytest.fixture
+def offline_split(monkeypatch):
+    """Replaces nltk sentence splitting by `toy_sentences`."""
+    from decision_models.evidence import sentences as sentences_lib
+
+    monkeypatch.setattr(sentences_lib, "split", toy_sentences)

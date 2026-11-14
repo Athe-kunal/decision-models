@@ -11,6 +11,7 @@ import argparse
 from collections.abc import Sequence
 import dataclasses
 import pathlib
+from typing import Literal
 from typing import TypeVar
 
 from omegaconf import MISSING
@@ -19,11 +20,21 @@ from omegaconf import OmegaConf
 
 SEED = 20260922  # The paper's training seed (LLM-as-Jev, Table 2).
 DEFAULT_DATA = "data/splits/reason_long_nimble"  # Local build or a Hub id.
-RELEASED_DATA = "Athekunal/decision-models-reason-long"
+RELEASED_DATA = "Athekunal/llm-jev-reason-long"
 
-DECODER = "decoder"
-ENCODER = "encoder"
 VARLEN = "varlen"  # Encoder attention: FlashAttention-2 varlen, packed rows.
+
+# Closed sets of string values: OmegaConf (>= 2.4) rejects anything else when
+# a config is loaded, so code never re-checks them.
+Kind = Literal["decoder", "encoder"]
+Part = Literal["dev", "test", "all"]
+Finetune = Literal["lora", "full"]
+Anchor = Literal["mass", "out", "pos"]
+Loss = Literal["listwise", "sigmoid_norm", "sqrt_softplus"]
+Removal = Literal["reader", "full", "delete"]
+Precision = Literal["no", "bf16", "fp16"]
+Dtype = Literal["float32", "bfloat16"]
+Labels = Literal["gold", "gold+generated"]
 
 T = TypeVar("T")
 
@@ -105,12 +116,29 @@ class RunConfig:
     max_steps: int = -1
     eval_every: int = 0
     skip_base_eval: bool = False
-    mixed_precision: str = "no"
+    mixed_precision: Precision = "no"  # Quote it in YAML: bare no is False.
 
-    def __post_init__(self) -> None:
-        """Reads YAML's bare `no` (the boolean False) as "no"."""
-        if self.mixed_precision.lower() in ("false", "none"):
-            self.mixed_precision = "no"
+
+@dataclasses.dataclass
+class RowsConfig:
+    """Which rows of a split a command reads (data.sampling.select).
+
+    Attributes:
+      source: A local folder of <split>.parquet files or a Hub dataset id.
+      split: The split to read.
+      datasets: Only these source datasets (None: all).
+      part: "dev" (the fixed per-dataset sample settings were chosen on),
+        "test" (every other row) or "all".
+      per: Then at most this many rows per dataset, seeded (None: all).
+      seed: Seeds the `per` draw.
+    """
+
+    source: str = DEFAULT_DATA
+    split: str = "eval"
+    datasets: list[str] | None = None
+    part: Part = "all"
+    per: int | None = None
+    seed: int = SEED
 
 
 # ---------------------------------------------------------------------------
@@ -124,7 +152,6 @@ class DecoderModelConfig:
 
     Attributes:
       id: Hugging Face id or local path of the base model.
-      adapter: A saved LoRA adapter to load on top of `id` (inference only).
       finetune: "lora" (p0 = the adapter disabled) or "full" (fp32 weights,
         p0 = a frozen bf16 copy of the base model).
       lora_rank: LoRA rank; alpha is 2 x rank.
@@ -134,8 +161,7 @@ class DecoderModelConfig:
     """
 
     id: str = MISSING
-    adapter: str | None = None
-    finetune: str = "lora"
+    finetune: Finetune = "lora"
     lora_rank: int = 16
     gradient_checkpointing: bool = True
     batch_tokens: int = 32768
@@ -198,11 +224,11 @@ class ModelRef:
         training) or "bfloat16".
     """
 
-    kind: str = MISSING
+    kind: Kind = MISSING
     path: str = MISSING
     adapter: str | None = None
     attention: str | None = None
-    dtype: str = "float32"
+    dtype: Dtype = "float32"
 
 
 # ---------------------------------------------------------------------------
@@ -220,7 +246,7 @@ class TrieObjectiveConfig:
       lam: Anchor weight.
     """
 
-    anchors: list[str] = dataclasses.field(
+    anchors: list[Anchor] = dataclasses.field(
         default_factory=lambda: ["mass", "out", "pos"]
     )
     lam: float = 1.0
@@ -246,13 +272,13 @@ class EncoderOptimConfig(OptimConfig):
     """OptimConfig plus the encoder recipe's loss.
 
     Attributes:
-      loss: One of losses.option.LOSSES: "listwise" (softmax over the
+      loss: One of losses.option.LOG_WEIGHTS: "listwise" (softmax over the
         options), "sigmoid_norm" (sigmoids normalised by their sum, as
         DeepSeek-V3's gate) or "sqrt_softplus". The last two need
         `format.no_token`.
     """
 
-    loss: str = "listwise"
+    loss: Loss = "listwise"
 
 
 @dataclasses.dataclass
@@ -306,12 +332,7 @@ class EvaluateConfig:
 
     Attributes:
       model: The model to load.
-      source: Data folder or Hub id.
-      split: The split to read.
-      part: "dev" (the per-dataset sample settings were chosen on), "test"
-        (every other row) or "all".
-      eval_per: Rows per dataset of the dev sample.
-      seed: Picks the dev sample.
+      rows: The rows to score (default: the dev part of the eval split).
       rows_file: A JSON list of row ids to keep (e.g. rows that fit 8K).
       save_rows: Also write eval_<tag>_rows.json (per-row correctness).
       gen_per: Decoders: rows per dataset also answered in text mode.
@@ -321,11 +342,9 @@ class EvaluateConfig:
     """
 
     model: ModelRef = dataclasses.field(default_factory=ModelRef)
-    source: str = DEFAULT_DATA
-    split: str = "eval"
-    part: str = "dev"
-    eval_per: int = 100
-    seed: int = SEED
+    rows: RowsConfig = dataclasses.field(
+        default_factory=lambda: RowsConfig(part="dev")
+    )
     rows_file: str | None = None
     save_rows: bool = False
     gen_per: int = 20
@@ -388,7 +407,7 @@ class EvidenceDataConfig:
 
     source: str = DEFAULT_DATA
     split: str = "train"
-    labels: str = "gold+generated"
+    labels: Labels = "gold+generated"
     generated_repo: str = RELEASED_DATA
     generated_file: str = "spans/train.parquet"
     datasets: list[str] | None = None
@@ -396,8 +415,8 @@ class EvidenceDataConfig:
     eval_split: str = "eval"
     eval_per: int = 50
     eval_seed: int = 0
-    eval_part: str | None = None
-    tune_part: str | None = None
+    eval_part: Literal["dev", "test"] | None = None
+    tune_part: Literal["dev", "test"] | None = None
 
 
 @dataclasses.dataclass
@@ -523,7 +542,7 @@ class CiteConfig:
       budget: Tokens per FA2 pass.
     """
 
-    removal: str = "full"
+    removal: Removal = "full"
     fuse: bool = True
     num_ablations: int | None = None
     top_k: int = 3
@@ -532,26 +551,21 @@ class CiteConfig:
 
 @dataclasses.dataclass
 class PredictConfig:
-    """Decisions for a split, with ContextCite evidence behind `cite`.
+    """Decisions for rows of a split, with optional ContextCite evidence.
 
     Attributes:
       model: The model to load.
-      source: Data folder or Hub id.
-      split: The split to read.
-      datasets: Only these datasets (None: all).
-      limit: The first N rows only (None: all).
-      cite: Add ContextCite evidence to every decision.
-      citation: ContextCite settings.
+      rows: The rows to decide.
+      limit: The first N of those rows only (None: all).
+      citation: ContextCite settings; set (e.g. `citation={}`) to add
+        evidence to every decision.
       out: Output JSON lines file.
     """
 
     model: ModelRef = dataclasses.field(default_factory=ModelRef)
-    source: str = DEFAULT_DATA
-    split: str = "eval"
-    datasets: list[str] | None = None
+    rows: RowsConfig = dataclasses.field(default_factory=RowsConfig)
     limit: int | None = None
-    cite: bool = False
-    citation: CiteConfig = dataclasses.field(default_factory=CiteConfig)
+    citation: CiteConfig | None = None
     out: str = MISSING
 
 
@@ -561,10 +575,8 @@ class CiteEvalConfig:
 
     Attributes:
       model: The model to load.
-      source: Data folder or Hub id.
-      split: The split to read.
-      datasets: Only these datasets (None: all).
-      per: Rows with gold spans per dataset.
+      rows: The rows; only those with gold spans covering a sentence count,
+        `rows.per` of them per dataset.
       generated_spans: Use the dataset's generated `spans` config (train rows)
         as gold instead of the rows' own spans.
       lds_masks: Held-out ablations for the LDS.
@@ -573,10 +585,9 @@ class CiteEvalConfig:
     """
 
     model: ModelRef = dataclasses.field(default_factory=ModelRef)
-    source: str = RELEASED_DATA
-    split: str = "eval"
-    datasets: list[str] | None = None
-    per: int = 50
+    rows: RowsConfig = dataclasses.field(
+        default_factory=lambda: RowsConfig(source=RELEASED_DATA, per=50, seed=0)
+    )
     generated_spans: bool = False
     lds_masks: int = 32
     citation: CiteConfig = dataclasses.field(default_factory=CiteConfig)
@@ -590,21 +601,17 @@ class SGLangConfig:
     Attributes:
       url: The server.
       tokenizer: The served (merged) model's folder or Hub id.
-      source: Data folder or Hub id.
-      split: The split to read.
-      datasets: Only these datasets (None: all).
-      per: Rows per dataset.
-      num_ablations: Ablations per row (None: about two per sentence).
+      rows: The rows (those with >= 2 sentences), `rows.per` per dataset.
+      citation: ContextCite settings (`num_ablations` is used).
       out: Optional JSON lines of the results.
     """
 
     url: str = "http://127.0.0.1:30000"
     tokenizer: str = MISSING
-    source: str = DEFAULT_DATA
-    split: str = "eval"
-    datasets: list[str] | None = None
-    per: int = 5
-    num_ablations: int | None = None
+    rows: RowsConfig = dataclasses.field(
+        default_factory=lambda: RowsConfig(per=5, seed=0)
+    )
+    citation: CiteConfig = dataclasses.field(default_factory=CiteConfig)
     out: str | None = None
 
 
@@ -615,20 +622,16 @@ class ServeConfig:
     Attributes:
       model: The model to load.
       evidence: An evidence-head run directory (encoders only), or None.
-      cite: Offer ContextCite for the decision.
-      citation: ContextCite settings.
-      source: Data folder or Hub id.
-      split: The split to sample rows from.
+      citation: ContextCite settings (None: no ContextCite).
+      rows: The rows to sample from.
       host: Address to bind (local only by default).
       port: Port.
     """
 
     model: ModelRef = dataclasses.field(default_factory=ModelRef)
     evidence: str | None = None
-    cite: bool = True
-    citation: CiteConfig = dataclasses.field(default_factory=CiteConfig)
-    source: str = DEFAULT_DATA
-    split: str = "eval"
+    citation: CiteConfig | None = dataclasses.field(default_factory=CiteConfig)
+    rows: RowsConfig = dataclasses.field(default_factory=RowsConfig)
     host: str = "127.0.0.1"
     port: int = 8767
 
@@ -638,7 +641,7 @@ class ServeConfig:
 # ---------------------------------------------------------------------------
 
 
-def load(
+def merge(
     schema: type[T],
     path: str | pathlib.Path | None = None,
     overrides: Sequence[str] = (),
@@ -651,24 +654,31 @@ def load(
       overrides: Dotlist entries, e.g. ["optim.lr=1e-5"].
 
     Returns:
-      The merged config, validated against `schema`.
+      The merged config (to save next to a run's outputs).
 
     Raises:
-      omegaconf.errors.OmegaConfBaseException: On an unknown key, a wrongly
-        typed value or a missing required value.
+      omegaconf.errors.OmegaConfBaseException: On an unknown key or a value
+        of the wrong type or outside its Literal set.
     """
     layers = [OmegaConf.structured(schema)]
     if path is not None:
         layers.append(OmegaConf.load(path))
     layers.append(OmegaConf.from_dotlist(list(overrides)))
-    cfg = OmegaConf.merge(*layers)
-    OmegaConf.to_object(cfg)  # Fails here on a missing required value.
-    return cfg
+    return OmegaConf.merge(*layers)
 
 
-def resolve(cfg: DictConfig) -> object:
-    """The typed dataclass instance of a loaded config."""
-    return OmegaConf.to_object(cfg)
+def load(
+    schema: type[T],
+    path: str | pathlib.Path | None = None,
+    overrides: Sequence[str] = (),
+) -> T:
+    """`merge`, as a typed `schema` instance.
+
+    Raises:
+      omegaconf.errors.OmegaConfBaseException: As `merge`, or on a missing
+        required value.
+    """
+    return OmegaConf.to_object(merge(schema, path, overrides))  # type: ignore[return-value]
 
 
 def save(cfg: DictConfig, path: str | pathlib.Path) -> None:
@@ -695,5 +705,5 @@ def from_command_line(
         "overrides", nargs="*", help="dotlist overrides, e.g. optim.lr=1e-5"
     )
     args = parser.parse_args(argv)
-    raw = load(schema, args.config, args.overrides)
-    return resolve(raw), raw  # type: ignore[return-value]
+    raw = merge(schema, args.config, args.overrides)
+    return OmegaConf.to_object(raw), raw  # type: ignore[return-value]

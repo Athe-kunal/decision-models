@@ -2,13 +2,11 @@ import numpy as np
 import pytest
 import torch
 
-from decision_models import config
 from decision_models.citation import context_cite
 from decision_models.data import schema
 from decision_models.evidence import head as head_lib
 from decision_models.evidence import metrics
 from decision_models.evidence import sentences
-from decision_models.models import encoder
 
 nltk_punkt = pytest.importorskip("nltk")
 
@@ -57,15 +55,9 @@ def test_ablation_masks_are_seeded() -> None:
     assert a.shape == (4, 6) and a.dtype == bool
 
 
-@pytest.fixture(scope="module")
-def model(encoder_dir, encoder_format) -> encoder.MaskedEncoder:
-    model_cfg = config.EncoderModelConfig(id=str(encoder_dir), attention="sdpa")
-    return encoder.MaskedEncoder.build(model_cfg, encoder_format, "cpu")
-
-
-def test_context_cite_on_an_encoder(model, example, sents) -> None:
-    result = context_cite.attribute(model, example, num_ablations=16)
-    assert result.answer == model.predict(example)
+def test_context_cite_on_an_encoder(masked_encoder, example, sents) -> None:
+    result = context_cite.attribute(masked_encoder, example, num_ablations=16)
+    assert result.answer == masked_encoder.predict(example)
     assert len(result.weights) == len(sents) == len(result.sentences)
 
 
@@ -76,11 +68,11 @@ def test_logit_q_is_stable() -> None:
     )
 
 
-def test_evidence_head_predicts_every_document_token(model, example) -> None:
-    hidden = model.unwrapped.model.config.hidden_size
-    head = head_lib.EvidenceHead(hidden, width=8).eval()
-    pred = head_lib.predict(model, head, example)
-    labelled = head_lib.document_tokens(model, example, example.spans)
+def test_evidence_head_predicts_every_document_token(
+    masked_encoder, evidence_head, example
+) -> None:
+    pred = head_lib.predict(masked_encoder, evidence_head, example)
+    labelled = head_lib.document_tokens(masked_encoder, example, example.spans)
     assert (
         len(pred.probabilities)
         == len(pred.tokens.index)

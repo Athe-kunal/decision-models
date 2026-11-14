@@ -232,7 +232,9 @@ def build_data(cfg: analysis_config.AT2Config, path: pathlib.Path) -> None:
         len(rows),
         dict(collections.Counter(r.source for r in rows)),
     )
-    features, targets, answers = [], [], []
+    features: list[np.ndarray] = []
+    targets: list[np.ndarray] = []
+    answers: list[int] = []
     for i, row in enumerate(rows, 1):
         x, y, a = training_example(model, row, data.masks, data.seed)
         features.append(x.cpu().numpy().astype(np.float16))

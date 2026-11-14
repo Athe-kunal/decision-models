@@ -30,7 +30,7 @@ help:
 	@echo "make evaluate        CONFIG=configs/evaluate/encoder.yaml ARGS='model.path=runs/...'"
 	@echo "make benchmarks      CONFIG=configs/evaluate/benchmarks.yaml ARGS='model.kind=... model.path=...'"
 	@echo "make evidence        CONFIG=configs/evidence/ultrabert_380m.yaml"
-	@echo "make predict         ARGS='model.kind=decoder model.path=... cite=true out=runs/predict/eval.jsonl'"
+	@echo "make predict         ARGS='model.kind=decoder model.path=... citation={} out=runs/predict/eval.jsonl'"
 	@echo "make serve           ARGS='model.kind=encoder model.path=runs/...'  (page on http://127.0.0.1:8767/)"
 	@echo "make sglang-install  SGLang as a uv tool (its own environment)"
 	@echo "make sglang-merge    merge ADAPTER into BASE -> MERGED (CPU)"

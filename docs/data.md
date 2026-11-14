@@ -42,7 +42,7 @@ example = schema.Example(
 storage.save(storage.to_dataset([example]), "data/splits/mine/train.parquet")
 ```
 
-Then point any config at it: `data.source=data/splits/mine`.
+Then point any config at it: `data.source=data/splits/mine` (training) or `rows.source=data/splits/mine` (evaluation, inference).
 
 ## Add a source to the build
 

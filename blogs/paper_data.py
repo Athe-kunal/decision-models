@@ -3,6 +3,7 @@
 Every number in the paper comes from here: figures, generated tables and the \\newcommand numbers.
 """
 import json
+from typing import Any
 import pathlib
 import random
 import statistics as st
@@ -66,7 +67,7 @@ def seed_avg(runs, tag="test"):
     if not per:
         return None
     common = set.intersection(*({x["id"] for x in p} for p in per))
-    out = {}
+    out: dict[str, tuple[str, float]] = {}
     for p in per:
         for x in p:
             if x["id"] in common:
@@ -77,7 +78,7 @@ def seed_avg(runs, tag="test"):
 
 def macro(rows):
     """ALL: the mean over datasets of each dataset's accuracy."""
-    by = {}
+    by: dict[str, list[float]] = {}
     for src, c in rows.values():
         by.setdefault(src, []).append(c)
     return sum(sum(v) / len(v) for v in by.values()) / len(by)
@@ -87,10 +88,10 @@ def boot(rows_a, rows_b=None, n=2000, seed=0):
     """Point and 95% stratified-bootstrap interval of ALL (or of the paired difference a - b)."""
     rng = random.Random(seed)
     ids = sorted(rows_a) if rows_b is None else sorted(set(rows_a) & set(rows_b))
-    by = {}
+    by: dict[str, list[str]] = {}
     for i in ids:
         by.setdefault(rows_a[i][0], []).append(i)
-    stats = []
+    stats: list[float] = []
     for _ in range(n):
         tot = 0.0
         for members in by.values():
@@ -111,7 +112,7 @@ def mean_sd(vals):
 
 def headline():
     """Per model: dev ALL, external macro (mean, sd over seeds) and test ALL with its 95% interval."""
-    out = {}
+    out: dict[str, dict[str, Any]] = {}
     for key, m in MODELS.items():
         rows = seed_avg(m["runs"])
         out[key] = dict(dev=mean_sd([dev_all(r) for r in m["runs"]]),
@@ -149,9 +150,9 @@ DATASETS = [("clinc150", "CLINC150"), ("massive", "MASSIVE"), ("bitext", "Bitext
 
 def per_dataset(h):
     """Model -> dataset -> (mean accuracy of the seed-averaged rows, number of rows)."""
-    out = {}
+    out: dict[str, dict[str, tuple[float, int]]] = {}
     for k, r in h.items():
-        by = {}
+        by: dict[str, list[float]] = {}
         for src, c in (r["rows"] or {}).values():
             by.setdefault(src, []).append(c)
         out[k] = {s: (sum(v) / len(v), len(v)) for s, v in by.items()}

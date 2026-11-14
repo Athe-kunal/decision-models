@@ -8,6 +8,7 @@ logit q(answer) gives one weight per sentence: how much keeping that
 sentence adds to logit q(answer).
 """
 
+from collections.abc import Callable
 from collections.abc import Sequence
 import dataclasses
 import math
@@ -54,22 +55,47 @@ def logit_q(s: torch.Tensor, answer: int) -> float:
     return (s[answer] - others.logsumexp(0)).item()
 
 
+# Scores rows of an example under keep masks [n, S] (True = sentence kept):
+# one s [K] per mask, options in release order.
+KeepScorer = Callable[
+    [schema.Example, Sequence[sentences_lib.Sentence], np.ndarray],
+    list[torch.Tensor],
+]
+
+
+def deletion_scorer(model: base.DecisionModel) -> KeepScorer:
+    """Scores each mask by deleting the dropped sentences (the reference)."""
+
+    def score(
+        example: schema.Example,
+        sentences: Sequence[sentences_lib.Sentence],
+        keep: np.ndarray,
+    ) -> list[torch.Tensor]:
+        ablated = [
+            sentences_lib.ablate(example, sentences, list(k)) for k in keep
+        ]
+        return model.score(ablated)
+
+    return score
+
+
 def ablation_targets(
     model: base.DecisionModel,
     example: schema.Example,
     sentences: Sequence[sentences_lib.Sentence],
     masks: np.ndarray,
     answer: int,
+    scorer: KeepScorer | None = None,
 ) -> np.ndarray:
     """[n] logit q(answer | ablated row) for every mask (True = kept).
 
     Options stay in release order, so `answer` is the same option under
-    every mask.
+    every mask. `scorer` defaults to deletion.
     """
-    ablated = [
-        sentences_lib.ablate(example, sentences, list(keep)) for keep in masks
-    ]
-    return np.array([logit_q(s, answer) for s in model.score(ablated)])
+    scorer = scorer or deletion_scorer(model)
+    return np.array(
+        [logit_q(s, answer) for s in scorer(example, sentences, masks)]
+    )
 
 
 def fit_surrogate(
@@ -91,6 +117,42 @@ def fit_surrogate(
     return weight, float(bias)
 
 
+def attribute_with(
+    scorer: KeepScorer,
+    example: schema.Example,
+    num_ablations: int | None = None,
+    keep_prob: float = 0.5,
+    alpha: float = 0.01,
+    seed: int = 0,
+) -> Attribution:
+    """ContextCite on one row, scoring masks with `scorer`.
+
+    The full row and every ablation are scored in one `scorer` call; the
+    full row's decision is the attributed answer.
+
+    Args:
+      scorer: Scores the rows under keep masks (e.g. `deletion_scorer`).
+      example: The row.
+      num_ablations: Ablations (None: `ablation_count` of the sentences).
+      keep_prob: Probability that an ablation keeps a sentence.
+      alpha: Lasso regularisation.
+      seed: Seeds the ablation masks.
+    """
+    sentences = sentences_lib.split(example)
+    keep = np.ones((1, len(sentences)), bool)  # Row 0: the full example.
+    if sentences:
+        n = num_ablations or ablation_count(len(sentences))
+        masks = sentences_lib.ablation_masks(n, len(sentences), keep_prob, seed)
+        keep = np.vstack([keep, masks])
+    scores = scorer(example, sentences, keep)
+    answer, q = base.decide(scores[0])
+    if not sentences:
+        return Attribution(answer, q, [], np.zeros(0))
+    y = np.array([logit_q(s, answer) for s in scores[1:]])
+    weights, bias = fit_surrogate(keep[1:], y, alpha)
+    return Attribution(answer, q, sentences, weights, bias)
+
+
 def attribute(
     model: base.DecisionModel,
     example: schema.Example,
@@ -99,24 +161,7 @@ def attribute(
     alpha: float = 0.01,
     seed: int = 0,
 ) -> Attribution:
-    """ContextCite on one row.
-
-    Args:
-      model: Any decision model.
-      example: The row.
-      num_ablations: Ablations (None: `ablation_count` of the sentences).
-      keep_prob: Probability that an ablation keeps a sentence.
-      alpha: Lasso regularisation.
-      seed: Seeds the ablation masks.
-    """
-    s = model.score([example])[0]
-    answer = int(s.argmax())
-    q = torch.softmax(s.float(), 0)[answer].item()
-    sentences = sentences_lib.split(example)
-    if not sentences:
-        return Attribution(answer, q, [], np.zeros(0))
-    n = num_ablations or ablation_count(len(sentences))
-    masks = sentences_lib.ablation_masks(n, len(sentences), keep_prob, seed)
-    y = ablation_targets(model, example, sentences, masks, answer)
-    weights, bias = fit_surrogate(masks, y, alpha)
-    return Attribution(answer, q, sentences, weights, bias)
+    """ContextCite on one row by deleting sentences (any decision model)."""
+    return attribute_with(
+        deletion_scorer(model), example, num_ablations, keep_prob, alpha, seed
+    )

@@ -71,7 +71,7 @@ def compute_features(batch: dict[str, list]) -> dict[str, list]:
     ]
     encoded = _CONTEXT.tokenizer(texts, add_special_tokens=False)
     hits = [_CONTEXT.index.example_hits(e) for e in examples]
-    strata = []
+    strata: list[str] = []
     for e in examples:
         stratification = sources.get_source(e.source).stratification
         strata.append(stratification.stratum(e) if stratification else "")
@@ -159,7 +159,7 @@ def sample_indices(
         by_stratum: dict[str, list[int]] = {}
         for i, stratum in enumerate(strata):
             by_stratum.setdefault(stratum, []).append(i)
-        out = []
+        out: list[int] = []
         for stratum, count in _quotas(sorted(by_stratum), n, shares).items():
             out += rng.sample(by_stratum.get(stratum, []), count)
     rng.shuffle(out)

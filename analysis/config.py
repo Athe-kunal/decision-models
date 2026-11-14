@@ -11,6 +11,7 @@ from omegaconf import MISSING
 from decision_models.config import DEFAULT_DATA
 from decision_models.config import SEED
 from decision_models.config import FrozenEncoderConfig
+from decision_models.config import RowsConfig
 
 
 @dataclasses.dataclass
@@ -66,19 +67,14 @@ class CitationConfig:
 
     Attributes:
       at2: AT2 run directory (its config names the encoder).
-      source: Data folder or Hub id.
-      split: Split with gold spans.
-      per: Rows with gold evidence per dataset (0: all).
-      part: Restrict to this part ("dev" / "test") of the held-out split.
-      seed: Picks the rows.
+      rows: The rows; those with gold spans and >= 2 sentences count,
+        `rows.per` per dataset (None: all).
     """
 
     at2: str = MISSING
-    source: str = DEFAULT_DATA
-    split: str = "eval"
-    per: int = 50
-    part: str | None = None
-    seed: int = 0
+    rows: RowsConfig = dataclasses.field(
+        default_factory=lambda: RowsConfig(per=50, seed=0)
+    )
 
 
 @dataclasses.dataclass
@@ -87,20 +83,16 @@ class CouplingConfig:
 
     Attributes:
       runs: Encoder training run directories.
-      source: Data folder or Hub id (None: each run's data.source).
-      split: The split to read.
-      part: Part of the split ("dev", "test", "all").
-      eval_per: Rows per dataset of the dev sample.
+      rows: The rows (default: the dev part of the eval split).
       shuffles: Extra random option orders per row.
-      seed: Seeds the sample and the shuffles.
+      seed: Seeds the shuffles and the removed distractor.
       tag: Writes <run>/<tag>.json.
     """
 
     runs: list[str] = MISSING
-    source: str | None = None
-    split: str = "eval"
-    part: str = "dev"
-    eval_per: int = 100
+    rows: RowsConfig = dataclasses.field(
+        default_factory=lambda: RowsConfig(part="dev")
+    )
     shuffles: int = 3
     seed: int = SEED
     tag: str = "coupling_dev"
@@ -113,9 +105,7 @@ class LatencyConfig:
     Attributes:
       decoders: Hub ids or paths (merged weights).
       encoders: Encoder training run directories.
-      source: Data folder or Hub id.
-      split: The split to read.
-      eval_per: Rows per dataset.
+      rows: The rows (default: the dev part of the eval split).
       warmup: Untimed warm-up rows.
       out: Output JSON.
       merge: Keep the other models already in `out`.
@@ -123,9 +113,9 @@ class LatencyConfig:
 
     decoders: list[str] = dataclasses.field(default_factory=list)
     encoders: list[str] = dataclasses.field(default_factory=list)
-    source: str = DEFAULT_DATA
-    split: str = "eval"
-    eval_per: int = 100
+    rows: RowsConfig = dataclasses.field(
+        default_factory=lambda: RowsConfig(part="dev")
+    )
     warmup: int = 20
     out: str = MISSING
     merge: bool = False

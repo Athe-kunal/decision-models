@@ -11,22 +11,44 @@ ContextCite only use this interface, so they work for both model families:
 """
 
 import abc
+from collections.abc import Callable
 from collections.abc import Iterator
 from collections.abc import Sequence
 import dataclasses
 import pathlib
 import random
+import time
 from typing import Any
+from typing import TypeVar
 
 import torch
 from torch import nn
 
 from decision_models.data import schema
 
+T = TypeVar("T")
+
 
 def default_device() -> str:
     """The default device: "cuda" when a GPU is visible, else "cpu"."""
     return "cuda" if torch.cuda.is_available() else "cpu"
+
+
+def timed(device: torch.device, fn: Callable[[], T]) -> tuple[T, float]:
+    """(fn(), seconds), with the GPU synchronised around the call."""
+    if device.type == "cuda":
+        torch.cuda.synchronize()
+    start = time.perf_counter()
+    result = fn()
+    if device.type == "cuda":
+        torch.cuda.synchronize()
+    return result, time.perf_counter() - start
+
+
+def decide(s: torch.Tensor) -> tuple[int, float]:
+    """(argmax s, softmax(s) at it) from option scores s [K]."""
+    answer = int(s.argmax())
+    return answer, torch.softmax(s.float(), 0)[answer].item()
 
 
 @dataclasses.dataclass(frozen=True)
@@ -95,6 +117,19 @@ class DecisionModel(abc.ABC):
     @abc.abstractmethod
     def save(self, path: pathlib.Path, accelerator: Any) -> None:
         """Saves the trained weights; every process must call it."""
+
+    def score_with_mass(
+        self, examples: Sequence[schema.Example]
+    ) -> list[tuple[torch.Tensor, float | None]]:
+        """(s [K], root legal mass) per example; None where it has no mass."""
+        return [(s, None) for s in self.score(examples)]
+
+    def generate_answer(
+        self, example: schema.Example
+    ) -> tuple[str, int | None] | None:
+        """Unguided text answer and the option it names; None if unsupported."""
+        del example
+        return None
 
     def predict(self, example: schema.Example) -> int:
         """The index of the chosen option."""

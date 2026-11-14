@@ -33,9 +33,9 @@ def _rows(n_sources: int = 3, per: int = 10) -> list[schema.Example]:
 
 def test_dev_and_test_partition_the_split() -> None:
     rows = _rows()
-    dev = sampling.select_part(rows, "dev", per=4, seed=0)
-    test = sampling.select_part(rows, "test", per=4, seed=0)
-    assert len(dev) == 12
+    dev = sampling.select_part(rows, "dev")
+    test = sampling.select_part(rows, "test")
+    assert len(dev) == 3 * min(10, sampling.DEV_PER)
     assert {r.id for r in dev} | {r.id for r in test} == {r.id for r in rows}
     assert not {r.id for r in dev} & {r.id for r in test}
 

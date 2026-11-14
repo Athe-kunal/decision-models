@@ -16,7 +16,7 @@ Copy 0 keeps every sentence and gives the attributed answer. The model must
 run `flash_attention.use_decoder`; `decoder.fuse` makes it ~1.7x faster.
 
 Usage:
-  model = decoder.TrieDecoder.for_inference(settings)
+  model = decoder.TrieDecoder.for_inference(path)
   flash_attention.use_decoder(model.network)
   decoder.fuse(model.network)
   result = masked.attribute(model, example, removal="full")
@@ -25,6 +25,7 @@ Usage:
 from collections.abc import Sequence
 import dataclasses
 from typing import Any
+from typing import Literal
 
 import numpy as np
 import torch
@@ -35,7 +36,7 @@ from decision_models.data import schema
 from decision_models.evidence import sentences as sentences_lib
 from decision_models.models import decoder
 
-REMOVALS = ("reader", "full")
+Removal = Literal["reader", "full"]
 Node = tuple[int, ...]
 
 
@@ -282,7 +283,8 @@ def pack_full(
     ]
     order = sorted(range(len(keep)), key=lambda i: tuple(keep[i]), reverse=True)
     path: list[np.ndarray] = [np.zeros(0, int)] * len(keep)
-    new_positions, segments = [], []
+    new_positions: list[np.ndarray] = []
+    segments: list[tuple[int, int, np.ndarray]] = []
     previous, n_new = None, 0
     for i in order:
         common = 0
@@ -398,6 +400,39 @@ def score_keep(
 # ---------------------------------------------------------------------------
 
 
+def packed_scorer(
+    model: decoder.TrieDecoder,
+    removal: Removal = "full",
+    budget: int = 65536,
+) -> context_cite.KeepScorer:
+    """Scores keep masks in packed forwards (model on `use_decoder`).
+
+    Args:
+      model: The decoder.
+      removal: "reader" (FlexAttention, leaks) or "full" (FA2, exact).
+      budget: Tokens per FA2 pass (full masking).
+    """
+    network, tokenizer, device = model.unwrapped, model.tokenizer, model.device
+
+    def score(
+        example: schema.Example,
+        sentences: Sequence[sentences_lib.Sentence],
+        keep: np.ndarray,
+    ) -> list[torch.Tensor]:
+        k = len(example.options)
+        ids, owner, reader = token_owners(tokenizer, example, sentences)
+        if removal == "reader" and sentences:
+            nodes = list(decoder.candidates(tokenizer, k)[1])
+            packed = pack_reader(ids, reader, len(keep), nodes)
+            mask = block_mask(packed, owner, keep, device)
+            return score_reader(network, packed, mask, tokenizer, k, device)
+        return score_keep(
+            network, tokenizer, ids, owner, keep, k, device, budget
+        )
+
+    return score
+
+
 def attribute(
     model: decoder.TrieDecoder,
     example: schema.Example,
@@ -405,51 +440,15 @@ def attribute(
     keep_prob: float = 0.5,
     alpha: float = 0.01,
     seed: int = 0,
-    removal: str = "reader",
+    removal: Removal = "reader",
     budget: int = 65536,
 ) -> context_cite.Attribution:
     """`context_cite.attribute` with every forward packed.
 
-    Uses the same ablation masks as `context_cite.attribute`, so
-    removal="full" gives its result (up to bf16 rounding).
-
-    Args:
-      model: A decoder on `flash_attention.use_decoder`.
-      example: The row.
-      num_ablations: Ablations (None: `context_cite.ablation_count`).
-      keep_prob: Probability that an ablation keeps a sentence.
-      alpha: Lasso regularisation.
-      seed: Seeds the ablation masks.
-      removal: "reader" (FlexAttention, leaks) or "full" (FA2, exact).
-      budget: Tokens per FA2 pass (full masking).
-
-    Raises:
-      ValueError: On an unknown removal.
+    Uses the same ablation masks, so removal="full" gives its result (up to
+    bf16 rounding). The model must be on `flash_attention.use_decoder`.
     """
-    if removal not in REMOVALS:
-        raise ValueError(f"removal is one of {REMOVALS}, not {removal!r}")
-    network, tokenizer, device = model.unwrapped, model.tokenizer, model.device
-    sentences = sentences_lib.split(example)
-    k = len(example.options)
-    n = num_ablations or context_cite.ablation_count(max(len(sentences), 1))
-    masks = sentences_lib.ablation_masks(n, len(sentences), keep_prob, seed)
-    ids, owner, reader = token_owners(tokenizer, example, sentences)
-    keep = np.vstack([np.ones((1, len(sentences)), bool), masks])  # [1 + n, S]
-    if not sentences:
-        keep = keep[:1]
-    if removal == "reader" and sentences:
-        nodes = list(decoder.candidates(tokenizer, k)[1])
-        packed = pack_reader(ids, reader, len(keep), nodes)
-        mask = block_mask(packed, owner, keep, device)
-        scores = score_reader(network, packed, mask, tokenizer, k, device)
-    else:
-        scores = score_keep(
-            network, tokenizer, ids, owner, keep, k, device, budget
-        )
-    answer = int(scores[0].argmax())
-    q = torch.softmax(scores[0].float(), 0)[answer].item()
-    if not sentences:
-        return context_cite.Attribution(answer, q, [], np.zeros(0))
-    y = np.array([context_cite.logit_q(s, answer) for s in scores[1:]])
-    weights, bias = context_cite.fit_surrogate(masks, y, alpha)
-    return context_cite.Attribution(answer, q, sentences, weights, bias)
+    scorer = packed_scorer(model, removal, budget)
+    return context_cite.attribute_with(
+        scorer, example, num_ablations, keep_prob, alpha, seed
+    )

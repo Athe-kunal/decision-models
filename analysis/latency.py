@@ -35,7 +35,6 @@ from analysis import config as analysis_config
 from decision_models import config
 from decision_models.data import sampling
 from decision_models.data import schema
-from decision_models.data import storage
 from decision_models.models import decoder
 from decision_models.models import encoder
 
@@ -121,9 +120,7 @@ def time_decoder(
     model_id: str, rows: Sequence[schema.Example], warmup: int
 ) -> dict[str, Any]:
     """Copy, prefill-only and tree latency, and batched throughput."""
-    model = decoder.TrieDecoder.for_inference(
-        config.DecoderModelConfig(id=model_id), "cuda"
-    )
+    model = decoder.TrieDecoder.for_inference(model_id, device="cuda")
     net, tok = model.network, model.tokenizer
     weights = torch.cuda.memory_allocated() / GIB
     prompts = [decoder.prompt_ids(r, tok) for r in rows]
@@ -206,9 +203,7 @@ def time_encoder(
 def main() -> None:
     """Times every model and writes the JSON."""
     cfg, _ = config.from_command_line(analysis_config.LatencyConfig, __doc__)
-    rows = sampling.per_dataset(
-        storage.load_examples(cfg.source, cfg.split), cfg.eval_per, config.SEED
-    )
+    rows = sampling.select(cfg.rows)
     gpu = torch.cuda.get_device_name()
     logger.info("{} rows on {}", len(rows), gpu)
     out = pathlib.Path(cfg.out)

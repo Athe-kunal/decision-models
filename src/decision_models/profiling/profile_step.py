@@ -117,7 +117,7 @@ def pick_rows(
       ValueError: If too few rows fit.
     """
     rng = random.Random(args.seed)
-    rows = []
+    rows: list[decoder.TrieEncoding] = []
     for i in rng.sample(range(len(train)), len(train)):
         ex = decoder.encode(train[i], tok, random.Random(f"{args.seed}:{i}"))
         if len(ex.input_ids) <= args.max_tokens:

@@ -1,24 +1,8 @@
 import pytest
-from test_inference import _split
 
 from decision_models import config
 from decision_models.citation import evaluate as cite_evaluate
 from decision_models.evaluation import evaluate
-from decision_models.evidence import sentences as sentences_lib
-from decision_models.models import decoder
-from decision_models.models import encoder
-
-
-@pytest.fixture(scope="module")
-def trie_decoder(decoder_dir) -> decoder.TrieDecoder:
-    settings = config.DecoderModelConfig(id=str(decoder_dir))
-    return decoder.TrieDecoder.for_inference(settings, "cpu")
-
-
-@pytest.fixture(scope="module")
-def masked_encoder(encoder_dir, encoder_format) -> encoder.MaskedEncoder:
-    model_cfg = config.EncoderModelConfig(id=str(encoder_dir), attention="sdpa")
-    return encoder.MaskedEncoder.build(model_cfg, encoder_format, "cpu")
 
 
 def test_decoder_legal_mass_and_text_mode(
@@ -54,9 +38,8 @@ def test_label_shares(masked_encoder, example) -> None:
 
 
 def test_context_cite_evaluation_row(
-    monkeypatch, masked_encoder, example
+    offline_split, masked_encoder, example
 ) -> None:
-    monkeypatch.setattr(sentences_lib, "split", _split)
     cfg = config.CiteConfig(removal="delete", num_ablations=8)
     row = cite_evaluate.evaluate_row(masked_encoder, example, cfg, lds_masks=8)
     assert row["sources"] == 3 and len(row["w"]) == 3

@@ -73,13 +73,14 @@ def word_scores(
     A word's score is the highest score of the (start, end, score) tokens
     inside it; words without a token are skipped.
     """
-    out = []
+    out: list[tuple[int, int, float]] = []
     ordered = sorted(tokens)
     i = 0
     for match in re.finditer(r"\S+", text):
         while i < len(ordered) and ordered[i][1] <= match.start():
             i += 1
-        inside, j = [], i
+        inside: list[float] = []
+        j = i
         while j < len(ordered) and ordered[j][0] < match.end():
             inside.append(ordered[j][2])
             j += 1

@@ -158,7 +158,8 @@ def benchmark_items() -> dict[str, list[list[str]]]:
         ("text",),
     )
     # WikiText-2 test: one item per article (a " = Title = " line opens one)
-    articles, current = [], []
+    articles: list[dict[str, list[str]]] = []
+    current: list[str] = []
     for r in _parquet(
         download.benchmark_path(
             "wikitext2", "wikitext-2-raw-v1/test-00000-of-00001.parquet"

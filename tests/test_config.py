@@ -46,19 +46,18 @@ def test_every_config_validates(path: pathlib.Path) -> None:
         if schema in (config.EvaluateConfig, config.BenchmarksConfig)
         else []
     )
-    cfg = config.resolve(config.load(schema, path, overrides))
+    cfg = config.load(schema, path, overrides)
     assert isinstance(cfg, schema)
 
 
 def test_overrides_and_interpolation() -> None:
-    raw = config.load(
+    cfg = config.load(
         config.EvaluateConfig,
         CONFIGS / "evaluate/encoder.yaml",
-        ["model.path=runs/enc", "part=test"],
+        ["model.path=runs/enc", "rows.part=test"],
     )
-    cfg = config.resolve(raw)
     assert cfg.out == "runs/enc"
-    assert cfg.part == "test"
+    assert cfg.rows.part == "test"
 
 
 def test_unknown_key_fails() -> None:
@@ -86,9 +85,7 @@ optim: {lr: 1.5e-05, betas: [0.9, 0.98], eps: 1.0e-06, weight_decay: 0.1, batch_
 run: {out: runs/x, seed: 1, epochs: 1, max_steps: -1, eval_every: 0, skip_base_eval: true, mixed_precision: bf16}
 """
     (tmp_path / "config.yaml").write_text(old)
-    cfg = config.resolve(
-        config.load(config.EncoderTrainConfig, tmp_path / "config.yaml")
-    )
+    cfg = config.load(config.EncoderTrainConfig, tmp_path / "config.yaml")
     assert cfg.optim.loss == "sigmoid_norm"
     assert cfg.format.no_token == " no"
 

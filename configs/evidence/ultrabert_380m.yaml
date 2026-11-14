@@ -7,7 +7,7 @@ data:
   source: data/splits/reason_long_nimble
   split: train
   labels: gold+generated  # or gold; gold wins where both exist
-  generated_repo: Athekunal/decision-models-reason-long
+  generated_repo: Athekunal/llm-jev-reason-long
   generated_file: spans/train.parquet
   datasets: null
   val_frac: 0.05

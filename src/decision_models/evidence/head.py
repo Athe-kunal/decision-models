@@ -13,10 +13,13 @@ annotator would mark.
 
 from collections.abc import Sequence
 import dataclasses
+import json
+import pathlib
 
 import torch
 from torch import nn
 
+from decision_models import config
 from decision_models.data import schema
 from decision_models.models import encoder
 
@@ -66,15 +69,7 @@ def document_tokens(
     """The document tokens of `example`, labelled against `spans`."""
     tokens = encoder.document_tokens(example, model.tokenizer, model.fmt)
     labels = torch.tensor(
-        [
-            float(
-                any(
-                    s.part == p and start < s.end and end > s.start
-                    for s in spans
-                )
-            )
-            for _, (p, start, end) in tokens
-        ]
+        [float(schema.overlaps_any(spans, *where)) for _, where in tokens]
     )
     return DocumentTokens(
         [t for t, _ in tokens], [w for _, w in tokens], labels
@@ -96,6 +91,40 @@ class Prediction:
     q: float
     tokens: DocumentTokens
     probabilities: torch.Tensor
+
+
+def build(
+    model: encoder.MaskedEncoder, cfg: config.EvidenceHeadConfig
+) -> EvidenceHead:
+    """A fresh head for `model`'s hidden size, on its device."""
+    hidden = model.unwrapped.model.config.hidden_size
+    return EvidenceHead(hidden, cfg.width, cfg.dropout).to(model.device)
+
+
+@dataclasses.dataclass(frozen=True)
+class Trained:
+    """A trained head and the word threshold tuned for it."""
+
+    head: EvidenceHead
+    threshold: float
+
+
+def load(run: str | pathlib.Path, model: encoder.MaskedEncoder) -> Trained:
+    """The head of a `decision-models-train-evidence` run, in eval mode.
+
+    The threshold is threshold*.json's (0.5 when the run has none).
+    """
+    run = pathlib.Path(run)
+    cfg = config.load(config.EvidenceConfig, next(run.glob("config*.yaml")))
+    head = build(model, cfg.head)
+    head.load_state_dict(torch.load(run / "head.pt", map_location=model.device))
+    thresholds = sorted(run.glob("threshold*.json"))
+    threshold = (
+        json.loads(thresholds[0].read_text())["threshold"]
+        if thresholds
+        else 0.5
+    )
+    return Trained(head.eval(), threshold)
 
 
 @torch.no_grad()

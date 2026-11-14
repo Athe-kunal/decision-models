@@ -210,7 +210,8 @@ def build(cfg: config.BuildDataConfig) -> dict[str, Any]:
         "benchmark_suites": {k: list(v) for k, v in download.SUITES.items()},
         "datasets": {},
     }
-    train_parts, eval_parts = [], []
+    train_parts: list[datasets.Dataset] = []
+    eval_parts: list[datasets.Dataset] = []
     for name in names:
         logger.info("{} ...", name)
         train_set, eval_set, stats = build_dataset(

@@ -39,9 +39,11 @@ import torch
 from decision_models import config
 from decision_models.data import schema
 from decision_models.data import storage
+from decision_models.evaluation import evaluate as evaluate_lib
 from decision_models.evidence import head as head_lib
 from decision_models.evidence import metrics
 from decision_models.evidence import sentences
+from decision_models.models import base
 from decision_models.models import encoder
 
 
@@ -84,17 +86,11 @@ def generated_spans(
 def labelled_rows(
     cfg: config.EvidenceDataConfig, model: encoder.MaskedEncoder
 ) -> list[LabelledRow]:
-    """Every training row with evidence, tokenised and labelled.
-
-    Raises:
-      ValueError: On an unknown label choice.
-    """
-    if cfg.labels not in ("gold", "gold+generated"):
-        raise ValueError(
-            f"data.labels is gold or gold+generated, not {cfg.labels!r}"
-        )
-    generated = {} if cfg.labels == "gold" else generated_spans(cfg)
-    out = []
+    """Every training row with evidence, tokenised and labelled."""
+    generated: dict[str, list[schema.Span]] = (
+        {} if cfg.labels == "gold" else generated_spans(cfg)
+    )
+    out: list[LabelledRow] = []
     for row in storage.load_examples(cfg.source, cfg.split):
         if cfg.datasets and row.source not in cfg.datasets:
             continue
@@ -163,10 +159,7 @@ def train(
         pos_weight,
     )
     torch.manual_seed(cfg.train.seed)
-    hidden = model.unwrapped.model.config.hidden_size
-    head = head_lib.EvidenceHead(hidden, cfg.head.width, cfg.head.dropout).to(
-        model.device
-    )
+    head = head_lib.build(model, cfg.head)
     optimizer = torch.optim.AdamW(
         head.parameters(), lr=cfg.train.lr, weight_decay=cfg.train.weight_decay
     )
@@ -185,7 +178,8 @@ def train(
     )
     for epoch in range(cfg.train.epochs):
         rng.shuffle(fit_rows)
-        start, running = time.time(), []
+        start = time.time()
+        running: list[float] = []
         for i in range(0, len(fit_rows), step_rows):
             optimizer.zero_grad(set_to_none=True)
             chunk = fit_rows[i : i + step_rows]
@@ -218,43 +212,23 @@ def train(
     return head.eval()
 
 
-def _sync(device: torch.device) -> None:
-    if device.type == "cuda":
-        torch.cuda.synchronize()
-
-
 @torch.no_grad()
 def evaluate(
-    cfg: config.EvidenceConfig,
     model: encoder.MaskedEncoder,
     head: head_lib.EvidenceHead,
+    rows: Sequence[schema.Example],
 ) -> dict[str, dict[str, float]]:
     """Token and sentence metrics per dataset, and their mean ("ALL")."""
-    data = cfg.data
-    rows = sentences.rows_with_evidence(
-        storage.load_examples(data.source, data.eval_split),
-        data.eval_per,
-        data.eval_seed,
-        data.eval_part,
-    )
     per: dict[str, dict[str, list[float]]] = collections.defaultdict(
         lambda: collections.defaultdict(list)
     )
     for r in rows:
-        _sync(model.device)
-        start = time.perf_counter()
-        pred = head_lib.predict(model, head, r)
-        _sync(model.device)
-        seconds = time.perf_counter() - start
+        pred, seconds = base.timed(
+            model.device, lambda r=r: head_lib.predict(model, head, r)
+        )
         p = pred.probabilities.numpy()
         gold = np.array(
-            [
-                any(
-                    s.part == part and a < s.end and b > s.start
-                    for s in r.spans
-                )
-                for part, a, b in pred.tokens.where
-            ]
+            [schema.overlaps_any(r.spans, *w) for w in pred.tokens.where]
         )
         top = np.argsort(-p)[:10]
         sents = sentences.split(r)
@@ -275,13 +249,12 @@ def evaluate(
             m[f"sentence_{k}"].append(span.get(k, float("nan")))
         m["seconds"].append(seconds)
         m["answer_correct"].append(float(pred.answer == r.gold))
-    out = {
+    out: dict[str, dict[str, float]] = {
         source: {k: float(np.nanmean(v)) for k, v in ms.items()}
         | {"rows": len(ms["seconds"])}
         for source, ms in sorted(per.items())
     }
-    keys = [k for k in next(iter(out.values())) if k != "rows"]
-    out["ALL"] = {k: float(np.mean([out[s][k] for s in out])) for k in keys}
+    out["ALL"] = evaluate_lib.macro_average(out)
     return out
 
 
@@ -292,7 +265,9 @@ def _word_scores(
     rows: Sequence[schema.Example],
 ) -> tuple[np.ndarray, np.ndarray, list[str]]:
     """Word scores, gold labels and dataset per word (predicted answer)."""
-    scores, labels, sources = [], [], []
+    scores: list[float] = []
+    labels: list[bool] = []
+    sources: list[str] = []
     for r in rows:
         pred = head_lib.predict(model, head, r)
         for p, part in enumerate(r.parts):
@@ -305,12 +280,7 @@ def _word_scores(
             ]
             for a, b, w in metrics.word_scores(part.text, tokens):
                 scores.append(w)
-                labels.append(
-                    any(
-                        s.part == p and a < s.end and b > s.start
-                        for s in r.spans
-                    )
-                )
+                labels.append(schema.overlaps_any(r.spans, p, a, b))
                 sources.append(r.source)
     return np.array(scores), np.array(labels), sources
 
@@ -319,25 +289,22 @@ def tune_threshold(
     cfg: config.EvidenceConfig,
     model: encoder.MaskedEncoder,
     head: head_lib.EvidenceHead,
+    examples: Sequence[schema.Example],
+    report: Sequence[schema.Example],
 ) -> dict[str, Any]:
     """Tunes one word threshold on non-report rows; reports P / R / F1.
 
     Raises:
-      AssertionError: If tuning and report rows overlap.
+      ValueError: If tuning and report rows overlap.
     """
     data = cfg.data
-    examples = storage.load_examples(data.source, data.eval_split)
-    report = sentences.rows_with_evidence(
-        examples, data.eval_per, data.eval_seed, data.eval_part
-    )
     report_ids = {r.id for r in report}
     if data.tune_part is not None:
         held = sentences.rows_with_evidence(
-            examples, 0, data.eval_seed, data.tune_part
+            examples, None, data.eval_seed, data.tune_part
         )
-        assert not {r.id for r in held} & report_ids, (
-            "tuning rows overlap reports"
-        )
+        if {r.id for r in held} & report_ids:
+            raise ValueError("the tuning rows overlap the report rows")
     else:
         held = [r for r in examples if r.has_spans and r.id not in report_ids]
     s, y, _ = _word_scores(model, head, held)
@@ -389,15 +356,17 @@ def main() -> None:
     model.unwrapped.requires_grad_(False)
     if (out / "head.pt").exists():
         logger.info("using existing {} (delete it to retrain)", out / "head.pt")
-        hidden = model.unwrapped.model.config.hidden_size
-        head = head_lib.EvidenceHead(hidden, cfg.head.width, cfg.head.dropout)
-        head.load_state_dict(torch.load(out / "head.pt"))
-        head = head.to(model.device).eval()
+        head = head_lib.load(out, model).head
     else:
         head = train(cfg, model, out)
-    results = evaluate(cfg, model, head)
+    data = cfg.data
+    examples = storage.load_examples(data.source, data.eval_split)
+    report = sentences.rows_with_evidence(
+        examples, data.eval_per, data.eval_seed, data.eval_part or "all"
+    )
+    results = evaluate(model, head, report)
     (out / f"metrics{tag}.json").write_text(json.dumps(results, indent=2))
-    threshold = tune_threshold(cfg, model, head)
+    threshold = tune_threshold(cfg, model, head, examples, report)
     (out / f"threshold{tag}.json").write_text(json.dumps(threshold, indent=2))
     for name, m in results.items():
         logger.info(

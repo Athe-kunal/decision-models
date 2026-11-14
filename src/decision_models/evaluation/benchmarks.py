@@ -160,7 +160,7 @@ def winogrande() -> list[schema.Example]:
 
 def sciq() -> list[schema.Example]:
     """SciQ test; the correct answer at a seeded position."""
-    examples = []
+    examples: list[schema.Example] = []
     for i, r in enumerate(_parquet("sciq", "data/test-00000-of-00001.parquet")):
         # the correct answer at a seeded position among the distractors
         opts = [
@@ -206,7 +206,7 @@ def jevbench() -> list[schema.Example]:
     Options are "<label>: <criterion>" in the item's label order; dict states
     are compact JSON.
     """
-    examples = []
+    examples: list[schema.Example] = []
     for tier in ("easy", "original", "hard"):
         with open(download.benchmark_path("jevbench", f"{tier}.jsonl")) as f:
             for line in f:

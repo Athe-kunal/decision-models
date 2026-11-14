@@ -40,7 +40,7 @@ def state_parts(state: Any) -> list[tuple[str, str]]:
         return [("Document", state)]
     if isinstance(state, list):
         return [("Statements", render_text(state))]
-    parts = []
+    parts: list[tuple[str, str]] = []
     for key, value in state.items():
         if key == "questions":  # a nested schema, not document text
             continue
@@ -79,7 +79,7 @@ def evidence_spans(
       ValueError: If a sentence is not in any part.
     """
     pair = task["evidence_certificate"]["verified_pair"]
-    spans = []
+    spans: list[schema.Span] = []
     for key in EVIDENCE_KEYS[task["variant"]]:
         for i, (_, text) in enumerate(parts):
             start = text.find(pair[key])
@@ -119,7 +119,7 @@ def nimble_example(task: dict[str, Any]) -> schema.Example:
 @base.register("nimble", splits={"train": "train", "validation": "eval"})
 def nimble() -> base.Split:
     """Nimble train / eval (the eval file is the validation split)."""
-    out = {}
+    out: base.Split = {}
     for split, filename in (
         ("train", "train.jsonl"),
         ("validation", "eval.jsonl"),

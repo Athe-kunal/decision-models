@@ -29,6 +29,7 @@ from decision_models.models import decoder, flash_attention
 flash_attention.use_decoder(model.network); decoder.fuse(model.network)
 masked.attribute(model, row, removal="full")
 context_cite.attribute(model, row)                # any DecisionModel, by deletion
+context_cite.attribute_with(my_scorer, row)       # your own (example, sentences, keep) -> scores
 ```
 
 ## Measure ContextCite against gold spans
@@ -48,14 +49,12 @@ decision-models-train-evidence --config configs/evidence/ultrabert_380m.yaml dat
 ```
 
 ```python
-import torch
 from decision_models.evidence import head as head_lib
 from decision_models.models import encoder
 
 model = encoder.MaskedEncoder.from_run("runs/ultrabert_380m_lr1.5e-5_sigmoidnorm")
-head = head_lib.EvidenceHead(model.unwrapped.model.config.hidden_size)
-head.load_state_dict(torch.load("runs/evidence_ultrabert_380m_sigmoidnorm/head.pt"))
-pred = head_lib.predict(model, head.to(model.device).eval(), row)
+evidence = head_lib.load("runs/evidence_ultrabert_380m_sigmoidnorm", model)   # head + tuned threshold
+pred = head_lib.predict(model, evidence.head, row)
 pred.answer, pred.tokens.where, pred.probabilities      # (part, start, end) and p per token
 ```
 

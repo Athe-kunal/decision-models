@@ -147,7 +147,7 @@ def document_tokens(
     order = range(len(example.options))
     text, where = build_prompt(example, order, tokenizer, fmt)
     offsets = tokenizer(text, return_offsets_mapping=True)["offset_mapping"]
-    out = []
+    out: list[tuple[int, CharRange]] = []
     for t, (a, b) in enumerate(offsets):
         if a == b:
             continue
@@ -174,7 +174,7 @@ def token_ranges(
     enc = tokenizer(text, return_offsets_mapping=True)
     starts = torch.tensor([a for a, _ in enc["offset_mapping"]])
     ends = torch.tensor([b for _, b in enc["offset_mapping"]])
-    out = []
+    out: list[tuple[int, int]] = []
     for part, start, end in ranges:
         lo, hi = where[part][0] + start, where[part][0] + end
         first = int(torch.searchsorted(ends, lo, right=True))
@@ -268,10 +268,8 @@ def load_mlm(
 
 def run_config(run: str | pathlib.Path) -> config.EncoderTrainConfig:
     """The resolved config an encoder run was trained with."""
-    raw = config.load(
-        config.EncoderTrainConfig, pathlib.Path(run) / "config.yaml"
-    )
-    return config.resolve(raw)  # type: ignore[return-value]
+    path = pathlib.Path(run) / "config.yaml"
+    return config.load(config.EncoderTrainConfig, path)
 
 
 class MaskedEncoder(base.DecisionModel):
@@ -279,7 +277,7 @@ class MaskedEncoder(base.DecisionModel):
 
     Attributes:
       fmt: The prompt format.
-      loss_kind: The training recipe (decision_models.losses.option.LOSSES).
+      loss_kind: The training recipe (losses.option.LOG_WEIGHTS).
       pack_tokens: Tokens per packed forward pass (FA2 varlen only).
     """
 
@@ -291,7 +289,7 @@ class MaskedEncoder(base.DecisionModel):
         tokenizer: Any,
         device: str | torch.device,
         fmt: config.FormatConfig,
-        loss_kind: str = "listwise",
+        loss_kind: config.Loss = "listwise",
         pack_tokens: int = 32768,
     ) -> None:
         super().__init__(network, tokenizer, device)
@@ -306,8 +304,7 @@ class MaskedEncoder(base.DecisionModel):
         fmt: config.FormatConfig,
         device: str | torch.device,
         dtype: torch.dtype = torch.float32,
-        loss_kind: str = "listwise",
-        tokenizer_path: str | None = None,
+        loss_kind: config.Loss = "listwise",
     ) -> "MaskedEncoder":
         """Loads the encoder named by `model_cfg`.
 
@@ -322,7 +319,7 @@ class MaskedEncoder(base.DecisionModel):
                 "applied to logit(yes) - logit(no), not to logit(yes) alone"
             )
         tokenizer = transformers.AutoTokenizer.from_pretrained(
-            tokenizer_path or model_cfg.id, revision=model_cfg.revision
+            model_cfg.id, revision=model_cfg.revision
         )
         model = load_mlm(
             model_cfg.id, model_cfg.revision, model_cfg.attention, dtype

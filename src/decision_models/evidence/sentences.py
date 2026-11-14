@@ -5,16 +5,15 @@ github.com/MadryLab/context-cite): the nltk sentences of each part, with
 content-free fragments merged into a neighbour so the text is unchanged.
 """
 
-import collections
 from collections.abc import Sequence
 import dataclasses
 import functools
-import random
 import re
 
 import nltk
 import numpy as np
 
+from decision_models import config
 from decision_models.data import sampling
 from decision_models.data import schema
 
@@ -44,11 +43,7 @@ class Sentence:
 
     def overlaps(self, span: schema.Span) -> bool:
         """Whether the sentence overlaps a span."""
-        return (
-            span.part == self.part
-            and self.start < span.end
-            and self.end > span.start
-        )
+        return span.overlaps(self.part, self.start, self.end)
 
 
 @functools.cache
@@ -126,7 +121,7 @@ def ablate(
             text = example.parts[s.part].text
             sep = s.sep if kept[s.part] else ""
             kept[s.part].append(sep + text[s.start : s.end])
-    parts = []
+    parts: list[schema.Part] = []
     for i, p in enumerate(example.parts):
         own = [s for s in sentences if s.part == i]
         lead = p.text[: own[0].start] if own else p.text
@@ -168,35 +163,32 @@ def gold_indices(
     }
 
 
+def has_evidence(example: schema.Example, cover: bool = False) -> bool:
+    """Whether a row has gold spans and >= 2 sentences to rank.
+
+    With `cover`, a span must also overlap one of its sentences.
+    """
+    if not example.has_spans:
+        return False
+    sentences = split(example)
+    if len(sentences) < 2:
+        return False
+    return not cover or bool(gold_indices(example, sentences))
+
+
 def rows_with_evidence(
     examples: Sequence[schema.Example],
-    per: int = 50,
+    per: int | None = 50,
     seed: int = 0,
-    part: str | None = None,
+    part: config.Part = "all",
 ) -> list[schema.Example]:
-    """Rows with gold spans and >= 2 sentences, `per` per dataset (0: all).
+    """Rows with gold spans and >= 2 sentences, `per` per dataset (None: all).
 
     Args:
       examples: The held-out split.
-      per: Rows per dataset; 0 keeps every such row.
+      per: Rows per dataset (None or 0: every such row).
       seed: Seeds the draw.
-      part: "dev" / "test" first restricts to that part of the split
-        (sampling.select_part with the default dev sample); None keeps all.
+      part: Restrict to this part of the split first (sampling.select_part).
     """
-    if part is not None:
-        from decision_models import config
-
-        keep = {
-            r.id for r in sampling.select_part(examples, part, 100, config.SEED)
-        }
-        examples = [r for r in examples if r.id in keep]
-    by_source: dict[str, list[schema.Example]] = collections.defaultdict(list)
-    for r in examples:
-        if r.has_spans and len(split(r)) >= 2:
-            by_source[r.source].append(r)
-    rng = random.Random(seed)
-    out: list[schema.Example] = []
-    for name in sorted(by_source):
-        rows = by_source[name]
-        out += rows if per == 0 else rng.sample(rows, min(per, len(rows)))
-    return out
+    rows = config.RowsConfig(part=part, per=per or None, seed=seed)
+    return sampling.select_rows(examples, rows, has_evidence)

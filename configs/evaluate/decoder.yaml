@@ -5,10 +5,10 @@ model:
   kind: decoder
   path: Qwen/Qwen3-0.6B
   adapter: null
-source: data/splits/reason_long_nimble
-split: eval
-part: dev                 # dev | test | all
-eval_per: 100
+rows:
+  source: data/splits/reason_long_nimble
+  split: eval
+  part: dev               # dev | test | all (dev: the fixed 100-per-dataset sample)
 save_rows: true
 out: ???
 tag: final

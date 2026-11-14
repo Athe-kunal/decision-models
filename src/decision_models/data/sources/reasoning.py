@@ -7,6 +7,7 @@ import json
 import re
 import zipfile
 
+from decision_models.data import schema
 from decision_models.data.sources import base
 from decision_models.data.sources import download
 
@@ -37,7 +38,8 @@ MUSIQUE_LABELS = {
 
 def sentence_offsets(theory: str, texts: list[tuple[str, str]]) -> dict:
     """(start, end) in the theory of each fact / rule, in theory order."""
-    where, pos = {}, 0
+    where: dict[str, tuple[int, int]] = {}
+    pos = 0
     for key, text in texts:
         i = theory.find(text, pos)
         if i < 0:
@@ -67,10 +69,10 @@ def proofwriter() -> base.Split:
         "proofwriter", "proofwriter-dataset-V2020.12.3.zip"
     )
     names = list(PROOFWRITER_LABELS)
-    out = {}
+    out: base.Split = {}
     with zipfile.ZipFile(path) as z:
         for split, stem in (("train", "train"), ("validation", "dev")):
-            examples = []
+            examples: list[schema.Example] = []
             member = (
                 f"proofwriter-dataset-V2020.12.3/{PROOFWRITER_CONFIG}/"
                 f"meta-{stem}.jsonl"
@@ -88,7 +90,7 @@ def proofwriter() -> base.Split:
                     )
                     for qid, q in x["questions"].items():
                         label = str(q["answer"]).lower()
-                        spans = []
+                        spans: list[tuple[str, int, int]] = []
                         proofs = q.get("proofsWithIntermediates") or []
                         if label != "unknown" and proofs:
                             used = re.findall(
@@ -127,13 +129,13 @@ def contractnli() -> base.Split:
     Split by document. "Not mentioned" has no spans.
     """
     names = list(CONTRACTNLI_LABELS)
-    out = {}
+    out: base.Split = {}
     with zipfile.ZipFile(
         download.local_path("contractnli", "contract-nli.zip")
     ) as z:
         for split, stem in (("train", "train"), ("validation", "dev")):
             data = json.loads(z.read(f"contract-nli/{stem}.json"))
-            examples = []
+            examples: list[schema.Example] = []
             for doc in data["documents"]:
                 text = doc["text"]
                 for key, a in doc["annotation_sets"][0]["annotations"].items():
@@ -177,9 +179,9 @@ def musique() -> base.Split:
     id (the group). Spans (answerable rows only): the supporting paragraphs.
     """
     names = list(MUSIQUE_LABELS)
-    out = {}
+    out: base.Split = {}
     for split, stem in (("train", "train"), ("validation", "dev")):
-        examples = []
+        examples: list[schema.Example] = []
         path = download.local_path("musique", f"musique_full_v1.0_{stem}.jsonl")
         with open(path) as f:
             for line in f:
