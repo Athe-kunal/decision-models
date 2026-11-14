@@ -1,5 +1,21 @@
 # decision-models
 
+📝 **Blog post:** [lnkd.in/guEPwQJn](https://lnkd.in/guEPwQJn)
+
+🤗 **Dataset** (training mixture, held-out rows and evidence labels): [Athekunal/llm-jev-reason-long](https://huggingface.co/datasets/Athekunal/llm-jev-reason-long)
+
+**Encoder checkpoints** (UltraBERT-380M, Apache-2.0):
+
+- 🤗 Softmax, "yes" (with evidence head): [Athekunal/ultrabert-jev-380m-softmax-yes](https://huggingface.co/Athekunal/ultrabert-jev-380m-softmax-yes)
+- 🤗 Softmax, "yes" − "no": [Athekunal/ultrabert-jev-380m-softmax-yesno](https://huggingface.co/Athekunal/ultrabert-jev-380m-softmax-yesno)
+- 🤗 Sigmoid-norm (with evidence head): [Athekunal/ultrabert-jev-380m-sigmoid-norm](https://huggingface.co/Athekunal/ultrabert-jev-380m-sigmoid-norm)
+- 🤗 Sqrt-softplus: [Athekunal/ultrabert-jev-380m-sqrt-softplus](https://huggingface.co/Athekunal/ultrabert-jev-380m-sqrt-softplus)
+
+**Decoder checkpoints** (LLM-as-Jev, trained for one epoch):
+
+- 🤗 Qwen3-0.6B: [Athekunal/llm-jev-qwen3-0.6b](https://huggingface.co/Athekunal/llm-jev-qwen3-0.6b)
+- 🤗 Qwen3-4B: [Athekunal/llm-jev-qwen3-4b](https://huggingface.co/Athekunal/llm-jev-qwen3-4b)
+
 Models that answer a question about a document by choosing one of its options, in a single scoring pass, and that show the sentences behind the choice.
 
 Two families share one interface, `DecisionModel` (`decision_models/models/base.py`): `score(rows) -> s [K]`, `loss(row)`, `save(...)`. Training, evaluation, the benchmarks, ContextCite and the server are written against it, so they work for both.
@@ -87,10 +103,8 @@ make test     # CPU, tiny random models, no downloads
 make lint     # ruff, Google style
 ```
 
-## Released
+## Releases
 
-- 🤗 [Athekunal/llm-jev-reason-long](https://huggingface.co/datasets/Athekunal/llm-jev-reason-long): training and held-out decisions, plus generated evidence spans (ReClor withheld).
-- [Athekunal/llm-jev-qwen3-0.6b](https://huggingface.co/Athekunal/llm-jev-qwen3-0.6b), [Athekunal/llm-jev-qwen3-4b](https://huggingface.co/Athekunal/llm-jev-qwen3-4b): decoders (merged weights; LoRA adapter in `adapter/`).
-- `scripts/release_encoders.py` builds (and with `--upload` pushes) the UltraBERT releases.
+The checkpoints and dataset are listed at the top. `scripts/release_encoders.py` builds (and with `--upload` pushes) the UltraBERT releases.
 
 The paper's LaTeX sources are on the `ultrabert` branch.
