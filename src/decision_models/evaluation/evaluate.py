@@ -21,7 +21,6 @@ import json
 import math
 import pathlib
 import random
-import time
 from typing import Any
 
 from loguru import logger
@@ -66,9 +65,12 @@ def score_rows(
     rows: Sequence[schema.Example],
     gen_ids: set[str] | None = None,
     examples_out: list[dict[str, Any]] | None = None,
-    chunk: int = 256,
 ) -> list[RowResult]:
-    """Scores rows in chunks (logging progress) and grades them.
+    """Scores the rows and grades them.
+
+    All rows go to the model in one call: decoders batch rows of similar
+    length, and in bf16 a row's scores depend on its batch's padding, so
+    scoring in smaller groups would change results.
 
     Args:
       model: Any decision model.
@@ -76,44 +78,30 @@ def score_rows(
       gen_ids: Rows also answered in text mode, where the model supports it
         (decoders).
       examples_out: If given, receives one readable record per text-mode row.
-      chunk: Rows per scoring call (for progress logs).
     """
     gen_ids = gen_ids or set()
     out: list[RowResult] = []
-    start = time.time()
-    for i in range(0, len(rows), chunk):
-        part = rows[i : i + chunk]
-        scored = model.score_with_mass(part)
-        for row, (s, mass) in zip(part, scored, strict=True):
-            prediction = int(s.argmax())
-            gen_valid = gen_correct = None
-            reply = model.generate_answer(row) if row.id in gen_ids else None
-            if reply is not None:
-                text, named = reply
-                gen_valid, gen_correct = named is not None, named == row.gold
-                if examples_out is not None:
-                    examples_out.append(
-                        _example_record(row, s, text, gen_valid)
-                    )
-            out.append(
-                RowResult(
-                    id=row.id,
-                    source=row.source,
-                    correct=prediction == row.gold,
-                    log_p_gold=torch.log_softmax(s.float(), 0)[row.gold].item(),
-                    prediction=prediction,
-                    root_legal_mass=mass,
-                    gen_valid=gen_valid,
-                    gen_correct=gen_correct,
-                )
+    scored = model.score_with_mass(rows)
+    for row, (s, mass) in zip(rows, scored, strict=True):
+        prediction = int(s.argmax())
+        gen_valid = gen_correct = None
+        reply = model.generate_answer(row) if row.id in gen_ids else None
+        if reply is not None:
+            text, named = reply
+            gen_valid, gen_correct = named is not None, named == row.gold
+            if examples_out is not None:
+                examples_out.append(_example_record(row, s, text, gen_valid))
+        out.append(
+            RowResult(
+                id=row.id,
+                source=row.source,
+                correct=prediction == row.gold,
+                log_p_gold=torch.log_softmax(s.float(), 0)[row.gold].item(),
+                prediction=prediction,
+                root_legal_mass=mass,
+                gen_valid=gen_valid,
+                gen_correct=gen_correct,
             )
-        elapsed = time.time() - start
-        logger.info(
-            "scored {}/{} rows, {:.1f}m, eta {:.1f}m",
-            len(out),
-            len(rows),
-            elapsed / 60,
-            elapsed / len(out) * (len(rows) - len(out)) / 60,
         )
     return out
 

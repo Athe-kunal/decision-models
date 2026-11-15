@@ -23,4 +23,4 @@ optim:
 run:
   out: runs/qwen3_0.6b_lora
   epochs: 1
-  mixed_precision: "no"
+  mixed_precision: bf16       # bf16 autocast, as the paper runs

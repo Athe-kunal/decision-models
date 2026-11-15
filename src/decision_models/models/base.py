@@ -19,8 +19,11 @@ import pathlib
 import random
 import time
 from typing import Any
+from typing import ClassVar
+from typing import Literal
 from typing import TypeVar
 
+from loguru import logger
 import torch
 from torch import nn
 
@@ -43,6 +46,35 @@ def timed(device: torch.device, fn: Callable[[], T]) -> tuple[T, float]:
     if device.type == "cuda":
         torch.cuda.synchronize()
     return result, time.perf_counter() - start
+
+
+class Progress:
+    """Logs "scored i/n rows" at most once per `every` seconds.
+
+    Calls that finish within `every` seconds log nothing, so scoring a few
+    rows (analyses, the server) stays quiet.
+    """
+
+    def __init__(self, total: int, every: float = 60.0) -> None:
+        self.total, self.every, self.done = total, every, 0
+        self.start = self.last = time.time()
+        self.logged = False
+
+    def update(self, n: int) -> None:
+        """Counts `n` more scored rows."""
+        self.done += n
+        now = time.time()
+        end = self.done == self.total and self.logged
+        if now - self.last >= self.every or end:
+            self.last, self.logged = now, True
+            elapsed = now - self.start
+            logger.info(
+                "scored {}/{} rows, {:.1f}m, eta {:.1f}m",
+                self.done,
+                self.total,
+                elapsed / 60,
+                elapsed / self.done * (self.total - self.done) / 60,
+            )
 
 
 def decide(s: torch.Tensor) -> tuple[int, float]:
@@ -73,7 +105,13 @@ class DecisionModel(abc.ABC):
         submodule of it.
       tokenizer: The model's tokenizer.
       device: Where inputs are placed.
+      row_order: How training seeds its visiting order and option shuffles
+        (training.trainer.visiting_order): "per_epoch", or "decoder", the
+        LLM-as-Jev trainer's first-epoch seeding, kept so decoder runs
+        reproduce.
     """
+
+    row_order: ClassVar[Literal["per_epoch", "decoder"]] = "per_epoch"
 
     def __init__(
         self, network: nn.Module, tokenizer: Any, device: str | torch.device

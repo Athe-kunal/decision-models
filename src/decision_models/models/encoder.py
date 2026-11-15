@@ -385,6 +385,7 @@ class MaskedEncoder(base.DecisionModel):
             else [[i] for i in range(len(encoded))]
         )
         out: list[torch.Tensor] = [torch.empty(0)] * len(encoded)
+        progress = base.Progress(len(encoded))
         for batch in batches:
             with torch.autocast(self.device.type, dtype=torch.bfloat16):
                 packed = flash_attention.pack(
@@ -395,6 +396,7 @@ class MaskedEncoder(base.DecisionModel):
                 s = scorer(packed.input_ids, packed.masks, **kwargs)
             for i, row in zip(batch, s.split(packed.splits), strict=True):
                 out[i] = row.float().cpu()
+            progress.update(len(batch))
         return out
 
     def score(self, examples: Sequence[schema.Example]) -> list[torch.Tensor]:

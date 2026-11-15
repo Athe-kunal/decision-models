@@ -467,6 +467,8 @@ class TrieDecoder(base.DecisionModel):
       objective: The loss config (training only).
     """
 
+    row_order = "decoder"
+
     def __init__(
         self,
         network: nn.Module,
@@ -568,6 +570,7 @@ class TrieDecoder(base.DecisionModel):
             (torch.empty(0), 0.0)
         ] * len(examples)
         budget, rows = self.settings.batch_tokens, self.settings.batch_rows
+        progress = base.Progress(len(examples))
         with autocast, torch.no_grad():
             for batch in length_batches(list(map(len, prompts_)), budget, rows):
                 scored = score_batch(
@@ -582,6 +585,7 @@ class TrieDecoder(base.DecisionModel):
                 )
                 for i, (s, mass) in zip(batch, scored, strict=True):
                     out[i] = (s.cpu(), float(mass))
+                progress.update(len(batch))
         return out
 
     @torch.no_grad()

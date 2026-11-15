@@ -24,6 +24,21 @@ def test_decoder_legal_mass_and_text_mode(
     )
 
 
+def test_rows_are_scored_in_one_call(monkeypatch, trie_decoder, example):
+    # Decoders length-sort the rows they get into padded batches, and bf16
+    # scores depend on the padding: scoring in chunks changed test results.
+    calls: list[int] = []
+    score = trie_decoder.score_with_mass
+
+    def spy(rows):
+        calls.append(len(rows))
+        return score(rows)
+
+    monkeypatch.setattr(trie_decoder, "score_with_mass", spy)
+    evaluate.score_rows(trie_decoder, [example] * 300)
+    assert calls == [300]
+
+
 def test_encoder_has_no_decoder_metrics(masked_encoder, example) -> None:
     metrics = evaluate.summarize(evaluate.score_rows(masked_encoder, [example]))
     assert set(metrics["ALL"]) == {"accuracy", "log_p_gold"}

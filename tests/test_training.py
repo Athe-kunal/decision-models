@@ -159,3 +159,27 @@ def test_schedule_warms_up_then_decays() -> None:
         sched.step()
     assert lrs[0] == pytest.approx(0.5) and max(lrs) == pytest.approx(1.0)
     assert lrs[-1] < lrs[2]
+
+
+def test_row_order_matches_the_original_trainers() -> None:
+    import random
+
+    rows = list(range(100))
+    # Decoders: the LLM-as-Jev trainer's single-epoch seeding.
+    old = list(rows)
+    random.Random(7).shuffle(old)
+    order = trainer.visiting_order(
+        rows, 7, 2, 32, decoder.TrieDecoder.row_order
+    )
+    assert [i for e, i in order if e == 0] == old[:96]
+    assert trainer.row_rng(7, 0, 5, "decoder").random() == (
+        random.Random("7:5").random()
+    )
+    # Encoders: reshuffled per epoch from the start.
+    old = list(rows)
+    random.Random("7:order:0").shuffle(old)
+    order = trainer.visiting_order(
+        rows, 7, 1, 32, encoder.MaskedEncoder.row_order
+    )
+    assert [i for _, i in order] == old[:96]
+    assert trainer.row_rng(7, 0, 5).random() == random.Random("7:0:5").random()

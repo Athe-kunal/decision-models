@@ -22,4 +22,4 @@ optim:
 run:
   out: runs/qwen3_0.6b_full_lr1e-5
   epochs: 1
-  mixed_precision: "no"
+  mixed_precision: bf16       # fp32 weights under bf16 autocast, as the paper runs

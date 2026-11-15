@@ -235,3 +235,4 @@ paper/arxiv.tar.gz
 node_modules/
 blogs/dist/
 blogs/.vite/
+paper

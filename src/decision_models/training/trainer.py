@@ -29,20 +29,40 @@ from decision_models.evaluation import evaluate
 from decision_models.models import base
 
 
-def row_rng(seed: int, epoch: int, index: int) -> random.Random:
-    """The option-shuffling rng of training row `index` in an epoch."""
+def row_rng(
+    seed: int, epoch: int, index: int, scheme: str = "per_epoch"
+) -> random.Random:
+    """The option-shuffling rng of training row `index` in an epoch.
+
+    scheme "decoder" seeds the first epoch as the LLM-as-Jev trainer did.
+    """
+    if scheme == "decoder" and epoch == 0:
+        return random.Random(f"{seed}:{index}")
     return random.Random(f"{seed}:{epoch}:{index}")
 
 
 def visiting_order(
-    rows: Sequence[int], seed: int, epochs: int, batch_size: int
+    rows: Sequence[int],
+    seed: int,
+    epochs: int,
+    batch_size: int,
+    scheme: str = "per_epoch",
 ) -> list[tuple[int, int]]:
-    """(epoch, row) pairs, reshuffled every epoch, whole batches only."""
+    """(epoch, row) pairs, reshuffled every epoch, whole batches only.
+
+    scheme "decoder" seeds the first epoch as the LLM-as-Jev trainer did
+    (random.Random(seed)), so decoder runs reproduce.
+    """
     per_epoch = len(rows) // batch_size
     order: list[tuple[int, int]] = []
     for epoch in range(epochs):
         shuffled = list(rows)
-        random.Random(f"{seed}:order:{epoch}").shuffle(shuffled)
+        key: int | str = (
+            seed
+            if scheme == "decoder" and epoch == 0
+            else f"{seed}:order:{epoch}"
+        )
+        random.Random(key).shuffle(shuffled)
         order += [(epoch, i) for i in shuffled[: per_epoch * batch_size]]
     return order
 
@@ -221,7 +241,9 @@ class Trainer:
             eps=optim.eps,
             weight_decay=optim.weight_decay,
         )
-        order = visiting_order(rows, run.seed, run.epochs, optim.batch_size)
+        order = visiting_order(
+            rows, run.seed, run.epochs, optim.batch_size, model.row_order
+        )
         total = len(order) // optim.batch_size
         if run.max_steps > 0:
             total = min(total, run.max_steps)
@@ -258,7 +280,8 @@ class Trainer:
                     else acc.no_sync(model.network)
                 )
                 with sync:
-                    out = model.loss(train[i], row_rng(run.seed, epoch, i))
+                    rng = row_rng(run.seed, epoch, i, model.row_order)
+                    out = model.loss(train[i], rng)
                     acc.backward(out.loss / len(mine))
                 for key, value in out.logs.items():
                     sums[key] = sums.get(key, 0) + value.float()
