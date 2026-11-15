@@ -14,12 +14,14 @@ ADAPTER ?= runs/qwen3_4b/adapter
 MERGED ?= $(dir $(ADAPTER))merged
 PORT ?= 30000
 BLOG_PORT ?= 8765
+DOCS_PORT ?= 8766
+MKDOCS := uvx --with mkdocs-material==9.5.49 mkdocs
 # make torch-profiler: the profiled model and where its outputs go
 PROFILE_MODEL ?= Qwen/Qwen3-0.6B
 PROFILE_OUT ?= runs/profile/$(notdir $(PROFILE_MODEL))
 
 .PHONY: help install download data train-decoder train-encoder evaluate benchmarks evidence \
-	predict serve sglang-install sglang-merge sglang-serve sglang-stop torch-profiler blog \
+	predict serve sglang-install sglang-merge sglang-serve sglang-stop torch-profiler blog docs \
 	test lint format
 
 help:
@@ -38,6 +40,7 @@ help:
 	@echo "make sglang-stop     stop the server on PORT"
 	@echo "make torch-profiler  profile training steps of PROFILE_MODEL -> PROFILE_OUT (docs/profiling.md)"
 	@echo "make blog            serve blogs/ at http://127.0.0.1:$(BLOG_PORT)/ (Ctrl-C to stop)"
+	@echo "make docs            serve the docs site (mkdocs.yml) at http://127.0.0.1:$(DOCS_PORT)/"
 	@echo "make test / lint / format"
 
 install:
@@ -99,6 +102,9 @@ torch-profiler:
 blog:
 	cd blogs && ( [ -d node_modules ] || npm install --no-fund --no-audit ) \
 		&& npx vite --port $(BLOG_PORT) --host 127.0.0.1 --strictPort
+
+docs:
+	$(MKDOCS) serve --dev-addr 127.0.0.1:$(DOCS_PORT)
 
 test:
 	$(PY) -m pytest -q

@@ -1,9 +1,11 @@
-name: Deploy blog
+name: Deploy docs and blog
 
+# One GitHub Pages site: the docs (MkDocs, docs/) at the root and the blog
+# (Vite, blogs/) under /blog/.
 on:
   push:
     branches: [main]
-    paths: ["blogs/**", ".github/workflows/blog.yml"]
+    paths: ["docs/**", "mkdocs.yml", "blogs/**", ".github/workflows/pages.yml"]
   workflow_dispatch:
 
 permissions:
@@ -25,6 +27,16 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Build docs
+        run: |
+          pip install mkdocs-material==9.5.49
+          mkdocs build --strict --site-dir site
+
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
@@ -32,15 +44,18 @@ jobs:
           cache: npm
           cache-dependency-path: blogs/package-lock.json
 
-      - name: Install
+      - name: Install blog
         working-directory: blogs
         run: npm ci
 
-      - name: Build
+      - name: Build blog
         working-directory: blogs
         env:
-          BASE_PATH: /${{ github.event.repository.name }}/
+          BASE_PATH: /${{ github.event.repository.name }}/blog/
         run: npm run build
+
+      - name: Add blog to site
+        run: cp -r blogs/dist site/blog
 
       - name: Setup Pages
         uses: actions/configure-pages@v5
@@ -48,7 +63,7 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: blogs/dist
+          path: site
 
       - name: Deploy to GitHub Pages
         id: deployment

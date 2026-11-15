@@ -1,0 +1,41 @@
+# The docs site (GitHub Pages root); the blog is built separately into /blog/
+# by .github/workflows/pages.yml. Preview locally with `make docs`.
+site_name: decision-models
+site_url: https://athe-kunal.github.io/decision-models/
+site_description: Decision models that choose one option per scoring pass, and show the evidence.
+repo_url: https://github.com/Athe-kunal/decision-models
+edit_uri: edit/main/docs/
+docs_dir: docs
+
+theme:
+  name: material
+  features:
+    - content.code.copy
+    - navigation.sections
+    - navigation.top
+    - search.highlight
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      toggle: {icon: material/brightness-7, name: Dark mode}
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      toggle: {icon: material/brightness-4, name: Light mode}
+
+markdown_extensions:
+  - admonition
+  - tables
+  - toc: {permalink: true}
+  - pymdownx.highlight
+  - pymdownx.superfences
+
+nav:
+  - Home: index.md
+  - Guides:
+      - Data: data.md
+      - Training: training.md
+      - Inference: inference.md
+      - Citations and evidence: citation.md
+      - Profiling: profiling.md
+      - Analyses: analysis.md
+  - Blog: https://athe-kunal.github.io/decision-models/blog/
