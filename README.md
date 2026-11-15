@@ -1,6 +1,6 @@
 # decision-models
 
-📝 **Blog post:** [lnkd.in/guEPwQJn](https://lnkd.in/guEPwQJn) · 📚 **Docs:** [athe-kunal.github.io/decision-models](https://athe-kunal.github.io/decision-models/)
+[📝 **Blog post:** ](https://athe-kunal.github.io/decision-models/blog/) · [ 📚 **Docs:** ](https://athe-kunal.github.io/decision-models/)
 
 🤗 **Dataset** (training mixture, held-out rows and evidence labels): [Athekunal/llm-jev-reason-long](https://huggingface.co/datasets/Athekunal/llm-jev-reason-long)
 
