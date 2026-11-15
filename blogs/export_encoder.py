@@ -1,6 +1,6 @@
 """Exports the encoder section: the four UltraBERT recipes against fully fine-tuned Qwen3-0.6B.
 
-The numbers are the paper's (paper/figures/data.py): test accuracy averaged over
+The numbers are the paper's (blogs/paper_data.py): test accuracy averaged over
 seeds, dev and external accuracy, per-dataset test accuracy; plus, per recipe,
 the option-sensitivity test (runs/<run>/coupling_dev.json, averaged over seeds),
 the training loss of its released run, and time and memory from runs/profile.json.
@@ -10,6 +10,7 @@ Usage:
 """
 
 import json
+from typing import Any
 import pathlib
 import statistics
 import sys
@@ -17,8 +18,8 @@ import sys
 from tensorboard.backend.event_processing import event_accumulator
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "paper" / "figures"))
-import data  # noqa: E402  (paper/figures/data.py)
+sys.path.insert(0, str(ROOT / "blogs"))
+import paper_data as data  # noqa: E402
 
 OUT = ROOT / "blogs" / "data" / "encoder.json"
 HF = "https://huggingface.co/Athekunal/"
@@ -69,13 +70,13 @@ def summary(h: dict, pd_: dict, key: str) -> dict:
 def main() -> None:
     h = data.headline()
     pd_ = data.per_dataset(h)
-    recipes = []
+    recipes: list[dict[str, Any]] = []
     for key, (label, run, repo, formula, text) in RECIPES.items():
         recipes.append({"key": key, "label": label, "formula": formula, "text": text, "hf": HF + repo,
                         **summary(h, pd_, key), "coupling": coupling(data.MODELS[key]["runs"]),
                         "loss": loss_curve(run)})
     prof = json.loads((data.RUNS / "profile.json").read_text())["models"]
-    cost = []
+    cost: list[dict[str, Any]] = []
     for label, key, path in PROFILE:
         rec = prof[key][path] if path else prof[key]
         cost.append({"label": label, "ms": rec["latency"]["mean_ms"], "peak_gib": rec["memory"]["peak_max_gib"]})

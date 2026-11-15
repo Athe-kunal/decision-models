@@ -1,20 +1,20 @@
 #!/usr/bin/env bash
-# Evaluates a run's adapter (or the base model) on the eval split and on the
-# external benchmarks (BoolQ, MMLU, MMLU-Pro, ARC-C, WinoGrande, SciQ,
-# Banking77, JevBench). Runs in the foreground.
+# Evaluates a model on the eval split and on the external benchmarks.
+# Runs in the foreground.
 #
-#   scripts/evaluate.sh <model> <run dir> [gpu] [tag]
-#   scripts/evaluate.sh Qwen/Qwen3-0.6B runs/qwen3_0.6b 1          # trained
-#   scripts/evaluate.sh Qwen/Qwen3-0.6B runs/qwen3_0.6b 1 base     # base model
+#   scripts/evaluate.sh <kind> <model path> [gpu] [tag] [overrides ...]
+#   scripts/evaluate.sh decoder Qwen/Qwen3-0.6B 1 base out=runs/qwen3_0.6b_lora
+#   scripts/evaluate.sh decoder Qwen/Qwen3-0.6B 1 final model.adapter=runs/qwen3_0.6b_lora/adapter out=runs/qwen3_0.6b_lora
+#   scripts/evaluate.sh encoder runs/ultrabert_380m_lr1.5e-5 0   # out defaults to the run
 #
-# Output: <run dir>/eval_<tag>.json and benchmarks_<tag>.json (+ examples).
+# Output: <out>/eval_<tag>.json and eval_benchmarks_<tag>.json (+ examples).
 set -euo pipefail
 cd "$(dirname "$0")/.."
-model=${1:?model id}; out=${2:?run dir}; gpu=${3:-0}; tag=${4:-final}
-adapter=()
-[[ $tag != base ]] && adapter=(--adapter "$out/adapter")
+kind=${1:?decoder or encoder}; path=${2:?model path}; gpu=${3:-0}; tag=${4:-final}
+shift $(( $# < 4 ? $# : 4 ))
 export CUDA_VISIBLE_DEVICES=$gpu
-.venv/bin/python -m llm_jev.evaluation.evaluate --model "$model" "${adapter[@]}" \
-    --out "$out" --tag "$tag"
-.venv/bin/python -m llm_jev.evaluation.benchmarks --model "$model" "${adapter[@]}" \
-    --out "$out" --tag "$tag"
+args=(model.kind="$kind" model.path="$path" tag="$tag")
+.venv/bin/python -m decision_models.evaluation.evaluate --config "configs/evaluate/$kind.yaml" \
+    "${args[@]}" save_rows=true "$@"
+.venv/bin/python -m decision_models.evaluation.benchmarks --config configs/evaluate/benchmarks.yaml \
+    "${args[@]}" "$@"

@@ -3,30 +3,30 @@
 `make torch-profiler` runs a few real training steps on one GPU and saves what
 PyTorch's two profiling tools see. The steps use the same model, LoRA, loss and
 data as `scripts/train.sh`. Training itself never profiles: the only change to
-the training code is the `record_function` labels in `losses.compute`, and
+the training code is the `record_function` labels in `losses.trie.compute`, and
 those do nothing when no profiler is running.
 
 ```bash
 make torch-profiler                                   # Qwen3-0.6B on GPU 0 -> runs/profile/Qwen3-0.6B
-make torch-profiler GPU=2 PROFILE_MODEL=Qwen/Qwen3-4B # another model or GPU
-make torch-profiler PROFILE_ARGS="--no-checkpointing --max-tokens 16384" \
+make torch-profiler GPUS=2 PROFILE_MODEL=Qwen/Qwen3-4B # another model or GPU
+make torch-profiler ARGS="no_checkpointing=true max_tokens=16384" \
     PROFILE_OUT=runs/profile/0.6b_nockpt              # an experiment, in its own folder
 ```
 
 With the defaults (4 rows per step, rows of at most 4,096 tokens), Qwen3-0.6B
 takes about 6 minutes, and most of that is writing the outputs.
-`.venv/bin/python -m llm_jev.profiling.profile_step --help` lists every flag.
+`ProfileConfig` in `src/decision_models/profiling/profile_step.py` lists every setting.
 The memory timeline needs matplotlib: `uv sync --inexact --extra profile`.
 
 ## 1. What the script does
 
-`src/llm_jev/profiling/profile_step.py` runs three stages:
+`src/decision_models/profiling/profile_step.py` runs three stages:
 
 | stage | steps | why |
 |---|---|---|
-| warmup | `--warmup-steps` (3) | The first steps are slow for one-time reasons: `torch.compile` compiles `loss_terms`, cuBLAS creates its handles, and the caching allocator `cudaMalloc`s its first segments. Profile them and you measure start-up, not training. |
-| memory | `--memory-steps` (1) | `torch.cuda.memory._record_memory_history` makes the allocator record every alloc and free with its Python stack. Each phase's allocated and peak bytes are also written down. |
-| profile | 1 + `--profile-steps` (1) | `torch.profiler` records CPU ops, CUDA kernels, input shapes, memory and stacks. The first step is traced and then discarded, because it carries the profiler's own start-up cost. |
+| warmup | `warmup_steps` (3) | The first steps are slow for one-time reasons: `torch.compile` compiles `loss_terms`, cuBLAS creates its handles, and the caching allocator `cudaMalloc`s its first segments. Profile them and you measure start-up, not training. |
+| memory | `memory_steps` (1) | `torch.cuda.memory._record_memory_history` makes the allocator record every alloc and free with its Python stack. Each phase's allocated and peak bytes are also written down. |
+| profile | 1 + `profile_steps` (1) | `torch.profiler` records CPU ops, CUDA kernels, input shapes, memory and stacks. The first step is traced and then discarded, because it carries the profiler's own start-up cost. |
 
 The memory and profile stages run separately because each one slows the other
 down. Recording a stack on every allocation would inflate the timings.
@@ -113,7 +113,7 @@ In this recipe the base weights are frozen, so gradients and optimizer state
 exist only for the LoRA parameters. **Gradient checkpointing** keeps only each
 decoder layer's input. Backward runs the layer's forward again to rebuild the
 rest. That trades about one extra forward of compute for a large cut in
-activation memory. `--no-checkpointing` shows what it saves.
+activation memory. `no_checkpointing=true` shows what it saves.
 
 ## 4. A reading workflow
 
@@ -149,7 +149,7 @@ differ too.
   30-220 MiB (`memory_phases.json`): checkpointing plus short rows. Backward
   peaks slightly higher than forward because each layer is recomputed and its
   gradients exist at the same time. The longest row sets the step's peak.
-  Profile with `--max-tokens 16384` to see where a long row puts it.
+  Profile with `max_tokens=16384` to see where a long row puts it.
 - **Reserved 2,278 MiB, but only about 1,310 MiB allocated.** The allocator
   kept the high-water mark of the warmup (2,065 MiB) as cache. That is not a
   leak. It is why `nvidia-smi` overstates what the job needs.
@@ -181,8 +181,8 @@ Each one changes one thing. Give each its own `PROFILE_OUT` so you can compare.
 
 | experiment | `PROFILE_ARGS` / variables | what to compare |
 |---|---|---|
-| checkpointing off | `--no-checkpointing` | Peak in `memory_phases.json` (activations grow with layers x tokens), and step time (no recompute in backward). |
-| long rows | `--max-tokens 16384 --batch-size 2` | Attention's share of `ops_by_cuda_time` and the peak. Does the step become GPU-bound? |
+| checkpointing off | `no_checkpointing=true` | Peak in `memory_phases.json` (activations grow with layers x tokens), and step time (no recompute in backward). |
+| long rows | `max_tokens=16384 batch_size=2` | Attention's share of `ops_by_cuda_time` and the peak. Does the step become GPU-bound? |
 | bigger model | `PROFILE_MODEL=Qwen/Qwen3-4B` | Kernels get larger. Does the CPU/GPU gap in `phases.txt` close? |
 | allocator | `PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True make torch-profiler` | Reserved versus allocated, and "Non-releasable memory". |
-| first step | `--cold-memory` | The snapshot now includes the first step: AdamW creating `exp_avg` / `exp_avg_sq`, and compilation. |
+| first step | `cold_memory=true` | The snapshot now includes the first step: AdamW creating `exp_avg` / `exp_avg_sq`, and compilation. |

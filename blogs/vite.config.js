@@ -9,7 +9,7 @@ export default defineConfig({
   server: {
     host: "127.0.0.1",
     port: 5173,
-    // the "Try it" section's model API (blogs/server.py, npm run api)
+    // the (commented-out) "Try it" section's model API: decision-models-serve (npm run api)
     proxy: { "/api": "http://127.0.0.1:8767" },
   },
 });

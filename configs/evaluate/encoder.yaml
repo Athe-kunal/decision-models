@@ -1,0 +1,15 @@
+# Evaluates a trained encoder run (its config.yaml gives the prompt format).
+# decision-models-evaluate --config configs/evaluate/encoder.yaml \
+#     model.path=runs/ultrabert_380m_lr1.5e-5 rows.part=test tag=test
+model:
+  kind: encoder
+  path: ???
+  attention: null         # null: the run's own; varlen packs rows (FA2)
+  dtype: float32          # scored under bf16 autocast, as in training
+rows:
+  source: data/splits/reason_long_nimble
+  split: eval
+  part: dev               # dev | test | all (dev: the fixed 100-per-dataset sample)
+save_rows: true
+out: ${model.path}
+tag: final

@@ -1,0 +1,10 @@
+# Time and memory per decision on one GPU (run it on an otherwise idle GPU).
+decoders: [Athekunal/llm-jev-qwen3-0.6b, Athekunal/llm-jev-qwen3-4b]
+encoders: [runs/ultrabert_380m_lr1.5e-5]
+rows:
+  source: data/splits/reason_long_nimble
+  split: eval
+  part: dev               # dev | test | all (dev: the fixed 100-per-dataset sample)
+warmup: 20
+out: runs/profile.json
+merge: false

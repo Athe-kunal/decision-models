@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # Serves a decision model with SGLang on 127.0.0.1, in the background (one GPU).
-# llm_jev.serving.sglang_client scores decisions and ContextCite ablations
+# decision_models.inference.sglang scores decisions and ContextCite ablations
 # through its /v1/score API.
 #
 #   scripts/sglang_serve.sh <model dir or HF id> [gpu] [port] [extra launch_server args ...]
-#   scripts/sglang_serve.sh runs/qwen3_4b/merged 0 30000      # merged by llm_jev.serving.merge
+#   scripts/sglang_serve.sh runs/qwen3_4b/merged 0 30000      # merged by decision_models.inference.merge
 #
 # SGLang is a uv tool install (`uv tool install --prerelease=allow --python 3.11
 # sglang==0.5.22`), outside this project's venv: its torch and transformers

@@ -31,13 +31,15 @@ worker() {
     name=${spec%%:*}; anchors=${spec#*:}; dir=$OUT/$name
     [[ -f $dir/eval_benchmarks_final.json ]] && continue
     mkdir "$OUT/.claim_$name" 2>/dev/null || continue  # another GPU has it
-    base=(--skip-base-eval); [[ $name == full ]] && base=()
-    pid=$(ACCELERATE_CONFIG=configs/accelerate_ddp.yaml scripts/train.sh \
-        "$MODEL" "$dir" "$gpu" --anchors "$anchors" ${base[@]+"${base[@]}"} | grep -o 'pid [0-9]*' | cut -d' ' -f2)
+    base=(run.skip_base_eval=true); [[ $name == full ]] && base=()
+    anchor_list="[${anchors//none/}]"
+    pid=$(ACCELERATE_CONFIG=configs/accelerate/ddp.yaml scripts/train.sh configs/train/qwen3_0.6b_lora.yaml \
+        "$gpu" model.id="$MODEL" run.out="$dir" objective.anchors="$anchor_list" ${base[@]+"${base[@]}"} \
+        | grep -o 'pid [0-9]*' | cut -d' ' -f2)
     while kill -0 "$pid" 2>/dev/null; do sleep 30; done
     [[ -d $dir/adapter ]] || { echo "$name: training failed, see $dir.log" >&2; continue; }
-    CUDA_VISIBLE_DEVICES=$gpu .venv/bin/python -m llm_jev.evaluation.benchmarks \
-        --model "$MODEL" --adapter "$dir/adapter" --out "$dir" --tag final \
+    CUDA_VISIBLE_DEVICES=$gpu .venv/bin/python -m decision_models.evaluation.benchmarks \
+        model.kind=decoder model.path="$MODEL" model.adapter="$dir/adapter" out="$dir" tag=final \
         > "$dir/benchmarks_final.log" 2>&1
     echo "$name: done"
   done

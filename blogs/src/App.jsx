@@ -6,7 +6,8 @@ import Results from "./sections/Results.jsx";
 import Ablation from "./sections/Ablation.jsx";
 import ContextCite from "./sections/ContextCite.jsx";
 // import AT2 from "./sections/AT2.jsx";
-import TryIt from "./sections/TryIt.jsx";
+// Try it is commented out: the model server is now `decision-models-serve` (docs/inference.md).
+// import TryIt from "./sections/TryIt.jsx";
 import SpanPipeline from "./sections/SpanPipeline.jsx";
 import Encoder from "./sections/Encoder.jsx";
 
@@ -22,8 +23,7 @@ const SECTIONS = [
   // { n: 8, title: "AT2", id: "at2", ready: true },
   { n: 8, title: "Span data", id: "spans", ready: true },
   { n: 9, title: "Encoder", id: "encoder", ready: true },
-  // the Try it API (blogs/server.py, npm run api) needs a GPU, so the section is dev-only
-  { n: 10, title: "Try it", id: "try", ready: !import.meta.env.PROD },
+  // { n: 10, title: "Try it", id: "try", ready: !import.meta.env.PROD },
 ];
 
 export default function App() {
@@ -55,7 +55,7 @@ export default function App() {
       {/* <AT2 /> */}
       <SpanPipeline />
       <Encoder />
-      {!import.meta.env.PROD && <TryIt />}
+      {/* {!import.meta.env.PROD && <TryIt />} */}
     </div>
   );
 }

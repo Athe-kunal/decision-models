@@ -1,176 +1,110 @@
-# llm-jev
+# decision-models
 
-Train LLMs as Jev decision models and attribute their decisions with fast ContextCite.
+📝 **Blog post:** [lnkd.in/guEPwQJn](https://lnkd.in/guEPwQJn)
 
-Two parts, one package (`llm_jev`):
+🤗 **Dataset** (training mixture, held-out rows and evidence labels): [Athekunal/llm-jev-reason-long](https://huggingface.co/datasets/Athekunal/llm-jev-reason-long)
 
-- **LLM-as-Jev training.** A decision model answers a question about a
-  document by choosing one option. The option is scored through a candidate
-  trie, and training uses a tree-factorized listwise loss (L_tree) with KL
-  anchors to the base model (Li & Wagle, "LLM-as-Jev", arXiv 2610.02076v3).
-  The model is evaluated on a held-out split and on external benchmarks.
-- **ContextCite for the decision.** Which context sentences the predicted
-  answer depends on, by ContextCite (Cohen-Wang et al., NeurIPS 2024): ablate
-  sentences, re-score the answer, fit a sparse linear surrogate. Three
-  implementations of the same ablations:
-  - deletion (`context_cite.attribute`): the reference method, one forward per ablation;
-  - reader-only masking (`masked_cite.attribute(..., removal="reader")`): the
-    document runs once and all ablated readers are packed into one sequence
-    under a FlexAttention block mask;
-  - full masking (`masked_cite.attribute(..., removal="full")`): dropped
-    sentences are hidden from every later token; the kept tokens of all
-    ablations are packed with FlashAttention-2 varlen, and shared prefixes
-    are computed once (a prefix tree over the ablation copies).
+**Encoder checkpoints** (UltraBERT-380M, Apache-2.0):
 
-  Both masked paths use `torch.compile`, and the ablation count follows the
-  row's sentence count (`masked_cite.ablation_count`). Reader-only masking
-  is the fastest but leaks (later sentences can carry a dropped sentence's
-  content), so it is not equivalent to deletion; full masking is.
+- 🤗 Softmax, "yes" (with evidence head): [Athekunal/ultrabert-jev-380m-softmax-yes](https://huggingface.co/Athekunal/ultrabert-jev-380m-softmax-yes)
+- 🤗 Softmax, "yes" − "no": [Athekunal/ultrabert-jev-380m-softmax-yesno](https://huggingface.co/Athekunal/ultrabert-jev-380m-softmax-yesno)
+- 🤗 Sigmoid-norm (with evidence head): [Athekunal/ultrabert-jev-380m-sigmoid-norm](https://huggingface.co/Athekunal/ultrabert-jev-380m-sigmoid-norm)
+- 🤗 Sqrt-softplus: [Athekunal/ultrabert-jev-380m-sqrt-softplus](https://huggingface.co/Athekunal/ultrabert-jev-380m-sqrt-softplus)
 
-  `modeling.fuse` compiles the decoder layers so RMSNorm, RoPE, SwiGLU and
-  the residual adds run as fused kernels: about half of a full-masking
-  forward was these memory-bound ops, and fusing them makes ContextCite
-  ~1.7x faster at equal quality (eval rows with gold spans: span AP 0.386
-  vs 0.383, LDS 0.699 vs 0.694; 237 s vs 400 s for 200 rows on an A100).
-  `scripts/attribution.sh` measures ContextCite on the rows with gold spans:
-  span AP / top-1, top-k removal drop, LDS and time.
+**Decoder checkpoints** (LLM-as-Jev, trained for one epoch):
 
-## Released
+- 🤗 Qwen3-0.6B: [Athekunal/llm-jev-qwen3-0.6b](https://huggingface.co/Athekunal/llm-jev-qwen3-0.6b)
+- 🤗 Qwen3-4B: [Athekunal/llm-jev-qwen3-4b](https://huggingface.co/Athekunal/llm-jev-qwen3-4b)
 
-The Reason+Long mix and the trained checkpoints are on the Hugging Face Hub.
-Each checkpoint has the merged weights at the top level and the LoRA adapter
-in `adapter/`.
+Models that answer a question about a document by choosing one of its options, in a single scoring pass, and that show the sentences behind the choice.
 
-- 🤗 [Athekunal/llm-jev-reason-long](https://huggingface.co/datasets/Athekunal/llm-jev-reason-long):
-  training and held-out decisions, plus generated evidence spans. ReClor is
-  withheld from this release.
-- [Athekunal/llm-jev-qwen3-0.6b](https://huggingface.co/Athekunal/llm-jev-qwen3-0.6b)
-- [Athekunal/llm-jev-qwen3-4b](https://huggingface.co/Athekunal/llm-jev-qwen3-4b)
+Two families share one interface, `DecisionModel` (`decision_models/models/base.py`): `score(rows) -> s [K]`, `loss(row)`, `save(...)`. Training, evaluation, the benchmarks, ContextCite and the server are written against it, so they work for both.
+
+| family | class | option k is scored by | training loss |
+|---|---|---|---|
+| decoder | `TrieDecoder` | log-probability of "k]" after "Best answer: [" (a candidate trie; LLM-as-Jev, arXiv 2610.02076v3) | L_tree + KL anchors |
+| encoder | `MaskedEncoder` | MLM logit of " yes" (minus " no") at the mask in front of option k | softmax, sigmoid-norm or sqrt-softplus |
 
 ## Install
 
-Requires Python 3.11+, a CUDA GPU for training and attribution, and
-[uv](https://docs.astral.sh/uv/).
-
 ```bash
-uv sync                                  # the package, editable, with torch (CUDA 12.8 wheels)
-uv sync --extra dev                      # pytest
+uv sync --extra dev                  # + --extra serve (local server), spans, profile, qwen35
 ```
 
-`causal-conv1d` is built from source against the installed torch (`CUDA_HOME`
-is the CUDA toolkit it is built with; see `pyproject.toml`). Hugging Face models are loaded by id
-(latest version); the FlashAttention-2 kernel is fetched from the Hub on
-first use (`llm_jev.modeling.fa2`).
+Python 3.11+, a CUDA GPU for training. FlashAttention-2 is fetched from the Hugging Face Hub on first use.
 
 ## Quickstart
 
 ```bash
-make data                                   # download the pinned sources, build the training mix (Reason+Long-12k + Nimble) -> data/splits/reason_long_nimble/{train,eval}.parquet (CPU, ~6 min)
-scripts/train.sh Qwen/Qwen3-0.6B runs/qwen3_0.6b 2       # one GPU; logs to runs/qwen3_0.6b.log
-scripts/train.sh Qwen/Qwen3-4B runs/qwen3_4b 0,1,2,3     # FSDP2 over four GPUs
-scripts/evaluate.sh Qwen/Qwen3-0.6B runs/qwen3_0.6b 2    # eval split + external benchmarks
+make data                                                                  # build the training mix
+make train-encoder CONFIG=configs/train/ultrabert_380m_sigmoid_norm.yaml GPUS=0
+make train-decoder CONFIG=configs/train/qwen3_0.6b_lora.yaml GPUS=0,1,2,3
+scripts/evaluate.sh encoder runs/ultrabert_380m_lr1.5e-5_sigmoidnorm 0
+decision-models-serve model.kind=encoder model.path=runs/ultrabert_380m_lr1.5e-5_sigmoidnorm   # http://127.0.0.1:8767/
 ```
-
-The console scripts run the same modules as `python -m llm_jev.<module>`:
-
-| command | module | what |
-|---|---|---|
-| `llm-jev-train` | `llm_jev.train.train` | one epoch of L_tree + KL anchors, evaluated before and after |
-| `llm-jev-evaluate` | `llm_jev.evaluation.evaluate` | eval split metrics |
-| `llm-jev-benchmarks` | `llm_jev.evaluation.benchmarks` | external benchmarks (BoolQ, MMLU, ARC-C, ... and JevBench) |
-| `llm-jev-attribution` | `llm_jev.evaluation.attribution` | ContextCite (full masking, fused kernels) on rows with gold spans |
-| `llm-jev-merge` | `llm_jev.serving.merge` | merges a LoRA adapter into its base model for SGLang |
-| `llm-jev-predict` | `llm_jev.serving.predict` | decisions for a split; `--cite` adds ContextCite evidence |
-| `llm-jev-sglang-cite` | `llm_jev.serving.sglang_client` | decisions and ContextCite through an SGLang server |
-| `llm-jev-spans` | `llm_jev.span_generation.best_of_n` | best-of-N evidence labels from a vLLM server (`span_generation/serve.sh`; `uv sync --extra spans`) |
-| `llm-jev-build-data` | `llm_jev.dataloader.build` | builds the training mix, Reason+Long-12k + Nimble (`--download` fetches the pinned sources into the Hugging Face cache) |
-
-Attribution with the packed paths, from Python:
 
 ```python
-from transformers import AutoTokenizer
-from llm_jev.dataloader import storage
-from llm_jev.modeling import fa2, masked_cite, modeling
+from decision_models import config, models
+from decision_models.data import storage
 
-tok = AutoTokenizer.from_pretrained("Qwen/Qwen3-0.6B")
-model = modeling.load("Qwen/Qwen3-0.6B", "runs/qwen3_0.6b/adapter")
-fa2.use(model)                                   # flex attention and FA2 dispatch
-modeling.fuse(model)                             # fused kernels (compiles on the first call)
-example = storage.load_examples(split="eval")[0]
-res = masked_cite.attribute(model, tok, example, removal="full")   # or removal="reader"
-top = sorted(res["sources"], key=lambda s: -s["w"])[:3]         # per-sentence weights w
+model = models.load(config.ModelRef(kind="decoder", path="Athekunal/llm-jev-qwen3-0.6b"))
+rows = storage.load_examples("Athekunal/llm-jev-reason-long", split="eval")[:8]
+choices = [int(s.argmax()) for s in model.score(rows)]
 ```
 
-Decisions for a split from the command line, with ContextCite evidence only when asked for:
+Every command takes `--config file.yaml` plus `key=value` overrides, checked against the dataclass schemas in `decision_models/config.py`.
+
+## Docs
+
+- [Data](docs/data.md): build the mix, load it, bring your own rows
+- [Training](docs/training.md): encoder recipes, decoder (LoRA / full), evaluation
+- [Inference](docs/inference.md): predict, local server, SGLang, LoRA merge
+- [Citations and evidence](docs/citation.md): ContextCite (one-pass for decoders), the evidence head, span labels
+- [Profiling](docs/profiling.md): torch.profiler traces and CUDA memory of a training step
+- [Analyses](docs/analysis.md): latency, option coupling, AT2 (outside the package)
+
+## Commands
+
+| command | what |
+|---|---|
+| `decision-models-build-data` | build the training mix |
+| `decision-models-train-encoder` / `-train-decoder` | train (run under `accelerate launch`; see `make train-*`, `scripts/train.sh`) |
+| `decision-models-evaluate` / `-benchmarks` | held-out split / external benchmarks |
+| `decision-models-train-evidence` | evidence head on a frozen encoder |
+| `decision-models-spans` | best-of-N evidence labels from a vLLM server |
+| `decision-models-predict` | decisions for a split, optional ContextCite |
+| `decision-models-serve` | local web page to try a model |
+| `decision-models-cite-eval` | ContextCite against gold spans |
+| `decision-models-sglang` / `-merge` | SGLang client / LoRA merge |
+
+## Layout
+
+```
+src/decision_models/
+  config.py      typed configs (OmegaConf)
+  data/          Example schema, sources, prompts, sampling, build pipeline
+  models/        DecisionModel; TrieDecoder; MaskedEncoder; FlashAttention-2 packing
+  losses/        trie loss + KL anchors; encoder recipes
+  training/      one Accelerate trainer, decoder and encoder entry points
+  evaluation/    held-out split and benchmarks
+  citation/      ContextCite: by deletion (any model), one-pass packed (decoders), evaluation
+  evidence/      sentences, metrics, evidence head, span labels
+  inference/     predict, local server, SGLang client, LoRA merge
+  profiling/     training-step profiler
+analysis/        paper measurements (not installed)
+blogs/           the blog (React; `make blog`)
+configs/  scripts/  docs/  tests/
+```
+
+## Development
 
 ```bash
-llm-jev-predict --model Athekunal/llm-jev-qwen3-0.6b --data Athekunal/llm-jev-reason-long \
-    --split eval --out runs/predict/eval.jsonl                 # decisions only (batched SDPA)
-llm-jev-predict --model Athekunal/llm-jev-qwen3-0.6b --data Athekunal/llm-jev-reason-long \
-    --split eval --limit 100 --cite --out runs/predict/eval_cited.jsonl   # + top-3 evidence per row
+make test     # CPU, tiny random models, no downloads
+make lint     # ruff, Google style
 ```
 
-`--cite` runs full masking on FA2 with fused kernels (`--no-fuse` for eager).
+## Releases
 
-Training uses Accelerate with FSDP2 (`configs/accelerate_fsdp2.yaml`); set
-`ACCELERATE_CONFIG=configs/accelerate_ddp.yaml` for DDP. `BATCH_SIZE` is the
-global batch.
+The checkpoints and dataset are listed at the top. `scripts/release_encoders.py` builds (and with `--upload` pushes) the UltraBERT releases.
 
-The launchers in `scripts/` take the GPU index (for training, a comma-separated
-list) as an argument and set `CUDA_VISIBLE_DEVICES` from it; the Python entry points use
-`CUDA_VISIBLE_DEVICES` directly. Runs and data live in `runs/` and `data/`,
-which are git-ignored.
-
-## Serving with SGLang
-
-SGLang runs in its own environment (a uv tool, `make sglang-install`), since
-its torch and transformers pins differ from training's. Its score API cannot
-select a LoRA adapter, so the adapter is merged into the weights first.
-
-```bash
-make sglang-install                                                  # once
-make sglang-serve BASE=Qwen/Qwen3-4B ADAPTER=runs/qwen3_4b/adapter GPU=0 PORT=30000
-llm-jev-sglang-cite --url http://127.0.0.1:30000 --tokenizer runs/qwen3_4b/merged --source contractnli --per 5
-make sglang-stop PORT=30000
-```
-
-`make sglang-serve` merges `ADAPTER` into `runs/qwen3_4b/merged` when it is
-missing, then starts `scripts/sglang_serve.sh` and waits for the server. The
-client (`llm_jev.serving.sglang_client`) sends our own prompt as token ids to
-`/v1/score`; it does not use `/v1/decisions`, which renders its own A-Z
-prompt. ContextCite there deletes the dropped sentences (the reference
-method): the radix cache reuses each ablated prompt's prefix, and the trie's
-deeper nodes are sent after the prompts so they hit the cache.
-
-```python
-from transformers import AutoTokenizer
-from llm_jev.serving import sglang_client
-
-tok = AutoTokenizer.from_pretrained("runs/qwen3_4b/merged")
-answer, s = sglang_client.predict("http://127.0.0.1:30000", tok, row)
-res = sglang_client.attribute("http://127.0.0.1:30000", tok, row)   # same output as masked_cite.attribute
-```
-
-## Module map
-
-```
-src/llm_jev/
-  dataloader/    schema.py (the `Example` every dataset becomes), storage.py (Parquet / Hub datasets),
-                 sources/ (one registered source per dataset, pinned downloads), processing.py + build.py
-                 (Reason+Long-12k as a `Dataset.map` pipeline), answers.py (prompt, candidate trie, scoring),
-                 prompts.py (Jinja loader)
-  modeling/      modeling.py (base and LoRA models, batched forward), context_cite.py (ContextCite by
-                 deletion), masked_cite.py (one-pass ContextCite: reader and full masking), fa2.py
-                 (FlashAttention-2 varlen next to flex attention)
-  train/         losses.py (L_tree, KL anchors), train.py
-  serving/       merge.py (LoRA merged into the weights), predict.py (decisions, with ContextCite
-                 behind --cite), sglang_client.py (decisions and ContextCite over SGLang's /v1/score)
-  span_generation/  best_of_n.py (best-of-N evidence labels, SelfCite reward), cite.j2, serve.sh
-                 (vLLM labelling server)
-  evaluation/    evaluate.py (eval split metrics), benchmarks.py (external benchmarks),
-                 attribution.py (ContextCite against gold spans)
-  prompts/       decision.j2 (the decision prompt; package data)
-scripts/         train.sh, evaluate.sh, attribution.sh, sglang_serve.sh (launchers)
-configs/         Accelerate configs for training (FSDP2, DDP)
-```
-
+The paper's LaTeX sources are on the `ultrabert` branch.
