@@ -295,7 +295,7 @@ def tune_threshold(
     """Tunes one word threshold on non-report rows; reports P / R / F1.
 
     Raises:
-      ValueError: If tuning and report rows overlap.
+      ValueError: If tuning and report rows overlap, or no tuning rows remain.
     """
     data = cfg.data
     report_ids = {r.id for r in report}
@@ -307,6 +307,11 @@ def tune_threshold(
             raise ValueError("the tuning rows overlap the report rows")
     else:
         held = [r for r in examples if r.has_spans and r.id not in report_ids]
+    if not held:
+        raise ValueError(
+            "no rows left to tune the word threshold on: every row with gold "
+            "spans is a report row; set data.tune_part or data.eval_per > 0"
+        )
     s, y, _ = _word_scores(model, head, held)
     grid = np.unique(np.quantile(s, np.linspace(0, 1, 401)))
     f1 = [metrics.precision_recall_f1(s, y, t)[2] for t in grid]

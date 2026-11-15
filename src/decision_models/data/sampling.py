@@ -65,12 +65,17 @@ def select_rows(
     cfg: config.RowsConfig,
     where: Predicate | None = None,
 ) -> list[schema.Example]:
-    """`cfg`'s datasets and part of `rows`, filtered by `where`, then `per`."""
-    rows = select_part(rows, cfg.part)
+    """`cfg`'s datasets and part of `rows`, filtered by `where`, then `per`.
+
+    Rows keep their order in `rows` (the part only decides which stay), so
+    the seeded `per` draw does not depend on how the part was sampled.
+    """
+    part_ids = {r.id for r in select_part(rows, cfg.part)}
     rows = [
         r
         for r in rows
-        if (cfg.datasets is None or r.source in cfg.datasets)
+        if r.id in part_ids
+        and (cfg.datasets is None or r.source in cfg.datasets)
         and (where is None or where(r))
     ]
     return rows if cfg.per is None else per_dataset(rows, cfg.per, cfg.seed)

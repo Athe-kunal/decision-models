@@ -34,6 +34,7 @@ from decision_models.citation import evaluate as cite_evaluate
 from decision_models.citation.evaluate import METRICS
 from decision_models.data import sampling
 from decision_models.data import schema
+from decision_models.data import storage
 from decision_models.evidence import sentences as sentences_lib
 from decision_models.models import base
 from decision_models.models import encoder
@@ -154,7 +155,12 @@ def main() -> None:
         at2_cfg.encoder.run, attention=at2_cfg.encoder.attention
     )
     theta = torch.load(at2_dir / "theta.pt").to(model.device)
-    rows = sampling.select(cfg.rows, sentences_lib.has_evidence)
+    rows = sentences_lib.rows_with_evidence(
+        storage.load_examples(cfg.rows.source, cfg.rows.split),
+        cfg.rows.per,
+        cfg.rows.seed,
+        cfg.rows.part,
+    )
     logger.info(
         "{} rows: {}",
         len(rows),

@@ -1,5 +1,6 @@
 import pytest
 
+from decision_models import config
 from decision_models.data import prompts
 from decision_models.data import sampling
 from decision_models.data import schema
@@ -47,3 +48,51 @@ def test_balanced_round_robin() -> None:
         s: sum(r.source == s for r in picked) for s in ("src0", "src1", "src2")
     }
     assert sorted(counts.values()) == [2, 2, 3]
+
+
+def _old_style_pick(rows, part, per, seed):
+    """The original selection: restrict to the part's ids in row order, then draw."""
+    keep = {r.id for r in sampling.select_part(rows, part)}
+    return sampling.per_dataset([r for r in rows if r.id in keep], per, seed)
+
+
+def test_part_then_per_draws_from_rows_in_their_order() -> None:
+    # Regression: the dev sample's shuffled order must not change the draw.
+    rows = _rows(3, 150)
+    cfg = config.RowsConfig(part="dev", per=7, seed=3)
+    picked = sampling.select_rows(rows, cfg)
+    assert [r.id for r in picked] == [
+        r.id for r in _old_style_pick(rows, "dev", 7, 3)
+    ]
+
+
+def test_part_keeps_row_order() -> None:
+    rows = _rows(3, 150)
+    picked = sampling.select_rows(rows, config.RowsConfig(part="dev"))
+    position = {r.id: i for i, r in enumerate(rows)}
+    assert [position[r.id] for r in picked] == sorted(
+        position[r.id] for r in picked
+    )
+
+
+def test_rows_with_evidence_all_rows_grouped_by_dataset(monkeypatch) -> None:
+    # Regression: every row (per=0) comes grouped by dataset, as before.
+    from decision_models.evidence import sentences
+
+    rows = [
+        schema.Example(
+            f"{s}:{i}",
+            s,
+            (schema.Part("P", "One two. Three four."),),
+            "q?",
+            ("a", "b"),
+            0,
+            spans=(schema.Span(0, 0, 3),),
+        )
+        for i in range(4)
+        for s in ("zeta", "alpha")
+    ]
+    monkeypatch.setattr(sentences, "has_evidence", lambda r, cover=False: True)
+    picked = sentences.rows_with_evidence(rows, per=0)
+    assert [r.source for r in picked] == ["alpha"] * 4 + ["zeta"] * 4
+    assert [r.id for r in picked[:4]] == [f"alpha:{i}" for i in range(4)]

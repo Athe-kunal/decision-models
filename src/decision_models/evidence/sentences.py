@@ -190,5 +190,8 @@ def rows_with_evidence(
       seed: Seeds the draw.
       part: Restrict to this part of the split first (sampling.select_part).
     """
-    rows = config.RowsConfig(part=part, per=per or None, seed=seed)
-    return sampling.select_rows(examples, rows, has_evidence)
+    cfg = config.RowsConfig(part=part, per=per or None, seed=seed)
+    rows = sampling.select_rows(examples, cfg, has_evidence)
+    if cfg.per is None:  # Every row, grouped by dataset in sorted order.
+        rows.sort(key=lambda r: r.source)
+    return rows
