@@ -1,7 +1,8 @@
 import PromptAndData from "./sections/PromptAndData.jsx";
 import TrieLoss from "./sections/TrieLoss.jsx";
 import Anchors from "./sections/Anchors.jsx";
-import LossCode from "./sections/LossCode.jsx";
+// The line-by-line trace of losses.trie.compute is commented out.
+// import LossCode from "./sections/LossCode.jsx";
 import Results from "./sections/Results.jsx";
 import Ablation from "./sections/Ablation.jsx";
 import ContextCite from "./sections/ContextCite.jsx";
@@ -9,6 +10,7 @@ import ContextCite from "./sections/ContextCite.jsx";
 // Try it is commented out: the model server is now `decision-models-serve` (docs/inference.md).
 // import TryIt from "./sections/TryIt.jsx";
 import SpanPipeline from "./sections/SpanPipeline.jsx";
+import EncoderLoss from "./sections/EncoderLoss.jsx";
 import Encoder from "./sections/Encoder.jsx";
 
 // Sections in reading order; later ones are added as the walkthrough grows.
@@ -16,12 +18,13 @@ const SECTIONS = [
   { n: 1, title: "Prompt and data", id: "top", ready: true },
   { n: 2, title: "Trie and tree loss", id: "trie", ready: true },
   { n: 3, title: "KL anchors", id: "anchors", ready: true },
-  { n: 4, title: "Loss in code", id: "losscode", ready: true },
-  { n: 5, title: "Results", id: "results", ready: true },
-  { n: 6, title: "Loss ablation", id: "ablation", ready: true },
-  { n: 7, title: "ContextCite", id: "contextcite", ready: true },
+  // { n: 4, title: "Loss in code", id: "losscode", ready: true },
+  { n: 4, title: "Results", id: "results", ready: true },
+  { n: 5, title: "Loss ablation", id: "ablation", ready: true },
+  { n: 6, title: "ContextCite", id: "contextcite", ready: true },
   // { n: 8, title: "AT2", id: "at2", ready: true },
-  { n: 8, title: "Span data", id: "spans", ready: true },
+  { n: 7, title: "Span data", id: "spans", ready: true },
+  { n: 8, title: "Encoder loss", id: "encoder-loss", ready: true },
   { n: 9, title: "Encoder", id: "encoder", ready: true },
   // { n: 10, title: "Try it", id: "try", ready: !import.meta.env.PROD },
 ];
@@ -48,12 +51,13 @@ export default function App() {
       <PromptAndData />
       <TrieLoss />
       <Anchors />
-      <LossCode />
+      {/* <LossCode /> */}
       <Results />
       <Ablation />
       <ContextCite />
       {/* <AT2 /> */}
       <SpanPipeline />
+      <EncoderLoss />
       <Encoder />
       {/* {!import.meta.env.PROD && <TryIt />} */}
     </div>

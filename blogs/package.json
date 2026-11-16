@@ -15,6 +15,7 @@
     "data:results": "cd .. && .venv/bin/python blogs/export_results.py",
     "data:ablation": "cd .. && .venv/bin/python blogs/export_ablation.py",
     "data:encoder": "cd .. && .venv/bin/python blogs/export_encoder.py",
+    "data:encoderloss": "cd .. && CUDA_VISIBLE_DEVICES=${GPU:-0} PYTHONPATH=src .venv/bin/python blogs/export_encoder_loss.py",
     "data:at2": "cd .. && CUDA_VISIBLE_DEVICES=${GPU:-0} PYTHONPATH=src .venv/bin/python blogs/export_at2.py",
     "api": "cd .. && CUDA_VISIBLE_DEVICES=${GPU:-0} .venv/bin/python -m decision_models.inference.server model.kind=encoder model.path=${RUN:-runs/ultrabert_380m_lr1.5e-5}"
   },

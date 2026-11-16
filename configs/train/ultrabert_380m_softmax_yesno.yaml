@@ -8,6 +8,7 @@ model:
   revision: 671a38c087233c0cc72c5bfceea6fffa2822f1db
   attention: varlen           # FlashAttention-2 varlen; or sdpa / eager
   pack_tokens: 32768
+  pack_train: true            # pack rows into one varlen forward (encoder only)
   gradient_checkpointing: true
 format:
   template: decision_mlm

@@ -25,6 +25,7 @@ from collections.abc import Sequence
 import dataclasses
 import functools
 import importlib.util
+import pathlib
 import sys
 from types import ModuleType
 from typing import Any
@@ -35,20 +36,32 @@ from torch import nn
 NAME = "varlen_bidirectional"
 DECODER_NAME = "packed"
 _KERNEL_REPO = "kernels-community/flash-attn"
+# Tracks main, to pick up kernel fixes as they land.
+_KERNEL_REVISION = "main"
 
 
 @functools.cache
 def kernel() -> ModuleType:
-    """The FA2 module for this torch / CUDA build, from the Hub snapshot."""
+    """The FA2 module for this torch / CUDA build, from the Hub snapshot.
+
+    Raises:
+      FileNotFoundError: If the Hub repo has no build for this torch / CUDA
+        version.
+    """
     from huggingface_hub import snapshot_download
 
     major, minor = torch.__version__.split(".")[:2]
     cuda = torch.version.cuda.replace(".", "")
     build = f"build/torch{major}{minor}-cxx11-cu{cuda}-x86_64-linux"
     root = snapshot_download(
-        _KERNEL_REPO, revision="main", allow_patterns=[build + "/*"]
+        _KERNEL_REPO, revision=_KERNEL_REVISION, allow_patterns=[build + "/*"]
     )
     path = f"{root}/{build}"
+    if not pathlib.Path(path, "__init__.py").is_file():
+        raise FileNotFoundError(
+            f"{_KERNEL_REPO}@{_KERNEL_REVISION} has no {build}; use "
+            "attention=sdpa"
+        )
     spec = importlib.util.spec_from_file_location(
         "flash_attn_hub",
         f"{path}/__init__.py",
@@ -281,7 +294,7 @@ def pack(
         masks=torch.tensor(
             [
                 s + m
-                for (_, masks), s in zip(rows, starts, strict=False)
+                for (_, masks), s in zip(rows, starts[:-1], strict=True)
                 for m in masks
             ],
             device=device,

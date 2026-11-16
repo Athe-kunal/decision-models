@@ -271,20 +271,24 @@ class Trainer:
                 step * optim.batch_size : (step + 1) * optim.batch_size
             ]
             mine = batch[acc.process_index :: acc.num_processes]
+            packs = model.training_packs(
+                [train[i] for _, i in mine],
+                [row_rng(run.seed, e, i, model.row_order) for e, i in mine],
+            )
             sums: dict[str, torch.Tensor] = {}
-            for j, (epoch, i) in enumerate(mine):
-                last = j == len(mine) - 1
+            for j, pack in enumerate(packs):
+                last = j == len(packs) - 1
                 sync = (
                     contextlib.nullcontext()
                     if last
                     else acc.no_sync(model.network)
                 )
                 with sync:
-                    rng = row_rng(run.seed, epoch, i, model.row_order)
-                    out = model.loss(train[i], rng)
-                    acc.backward(out.loss / len(mine))
-                for key, value in out.logs.items():
-                    sums[key] = sums.get(key, 0) + value.float()
+                    outs = model.pack_loss(pack)
+                    acc.backward(sum(o.loss for o in outs) / len(mine))
+                for out in outs:
+                    for key, value in out.logs.items():
+                        sums[key] = sums.get(key, 0) + value.float()
             keys = sorted(sums)
             means = acc.reduce(torch.stack([sums[k] for k in keys]), "sum")
             logs = dict(

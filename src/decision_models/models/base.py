@@ -152,6 +152,22 @@ class DecisionModel(abc.ABC):
     def loss(self, example: schema.Example, rng: random.Random) -> LossOutput:
         """The training loss of one row; `rng` shuffles its options."""
 
+    def training_packs(
+        self,
+        examples: Sequence[schema.Example],
+        rngs: Sequence[random.Random],
+    ) -> list[Any]:
+        """Groups one process's rows of a batch into forward passes.
+
+        Default: one row per pass. `pack_loss` takes each item.
+        """
+        return list(zip(examples, rngs, strict=True))
+
+    def pack_loss(self, pack: Any) -> list[LossOutput]:
+        """The losses of one item of `training_packs`, one per row."""
+        example, rng = pack
+        return [self.loss(example, rng)]
+
     @abc.abstractmethod
     def save(self, path: pathlib.Path, accelerator: Any) -> None:
         """Saves the trained weights; every process must call it."""

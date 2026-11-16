@@ -247,7 +247,7 @@ function DatasetTable({ title, rows, get, digits = 0 }) {
 export default function Ablation() {
   return (
     <section className="trie-section" id="ablation">
-      <p className="eyebrow">6 · Loss ablation</p>
+      <p className="eyebrow">5 · Loss ablation</p>
       <h2>Do the three extra terms earn their keep?</h2>
       <p className="lede small">
         {a.model}, one epoch ({a.total_steps} steps, batch {a.batch_size}, rank {a.lora_rank}, learning rate {a.lr}, λ = {a.lam}) on the

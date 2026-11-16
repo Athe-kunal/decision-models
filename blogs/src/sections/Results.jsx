@@ -235,7 +235,7 @@ export default function Results() {
   const series = (get) => MODELS.map((m) => ({ id: m.id, label: m.label, color: m.color, points: get(m) }));
   return (
     <section className="trie-section" id="results">
-      <p className="eyebrow">5 · Results</p>
+      <p className="eyebrow">4 · Results</p>
       <h2>Three models, one recipe</h2>
       <p className="lede small">
         The same LoRA recipe (rank 16, λ = 1, batch 32, learning rate 1e-4) for one epoch,

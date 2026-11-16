@@ -11,6 +11,8 @@ scripts/train.sh configs/train/ultrabert_380m_sigmoid_norm.yaml 0 optim.lr=8e-6 
 
 Recipes (`optim.loss`): `listwise`, `sigmoid_norm`, `sqrt_softplus`. The last two need `format.no_token: " no"`.
 
+`model.pack_train: true` (on in the UltraBERT configs) packs each GPU's rows, up to `model.pack_tokens`, into one FA2 varlen forward. It needs `model.attention: varlen` and trains about 4× faster than SDPA with the same dev accuracy. Set it to `false` to run one row per forward.
+
 ```bash
 configs/train/ultrabert_380m_softmax_yes.yaml
 configs/train/ultrabert_380m_softmax_yesno.yaml

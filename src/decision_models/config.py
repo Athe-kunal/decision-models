@@ -177,7 +177,10 @@ class EncoderModelConfig:
       revision: Hub commit (None: latest).
       attention: "varlen" (FlashAttention-2 varlen: no masks, packed
         evaluation) or a transformers attn_implementation ("sdpa", ...).
-      pack_tokens: Tokens per packed forward pass in evaluation (varlen).
+      pack_tokens: Tokens per packed forward pass (varlen).
+      pack_train: Training also packs (varlen): a process's rows of a batch
+        go through in packs of up to `pack_tokens`, not one row per forward
+        pass. The loss is the same sum over rows.
       gradient_checkpointing: Recompute activations in the backward pass.
     """
 
@@ -185,6 +188,7 @@ class EncoderModelConfig:
     revision: str | None = None
     attention: str = VARLEN
     pack_tokens: int = 32768
+    pack_train: bool = False
     gradient_checkpointing: bool = True
 
 

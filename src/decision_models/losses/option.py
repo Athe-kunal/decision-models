@@ -9,8 +9,10 @@ Every recipe normalises a per-option value over the K options and takes
 - "sqrt_softplus": p_k = h(s_k) / sum_j h(s_j), h(s) = sqrt(softplus(s)),
   unbounded above, so an accepted option keeps a slowly fading gradient.
 
-The last two need s = logit(yes) - logit(no): raw MLM logits are ~200 in
-size, where every sigmoid saturates at 1.
+The last two need s = logit(yes) - logit(no), a log-odds near 0 where the
+sigmoid curves. Raw MLM logits are in the hundreds, on a flat tail: very
+negative, sigmoid(s) ~ e^s and the recipe collapses to a softmax; very
+positive, sigmoid(s) ~ 1 and the gradient vanishes.
 """
 
 from collections.abc import Callable

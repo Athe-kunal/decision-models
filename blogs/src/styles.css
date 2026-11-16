@@ -838,3 +838,57 @@ a.sec { text-decoration: none; }
 #encoder .model-toggle { flex-wrap: wrap; max-width: 100%; }
 .stepper { flex-wrap: wrap; }
 .stepper .dots { flex-wrap: wrap; min-width: 0; }
+
+/* section 9: encoder loss */
+.encl-common { margin: 18px 0 14px; }
+.encl-eqs { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 0 36px; }
+.encl-common .tex.block { display: block; max-width: 100%; overflow-x: auto; overflow-y: hidden; }
+.encl-card { padding: 16px; position: static; min-height: 0; }
+.encl-prompt { margin: 0; font: 12.5px/1.6 var(--mono); white-space: pre-wrap; word-break: break-word; color: var(--fg); }
+.encl-prompt .encl-gold { background: var(--gold-bg); border-radius: 4px; }
+.encl-mask { font-weight: 600; color: var(--surface); background: var(--accent); border-radius: 4px; padding: 0 4px; }
+.encl-key { list-style: none; margin: 0 0 12px; padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 4px 14px; font-size: 12.5px; color: var(--muted); }
+.encl-key li { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding: 2px 6px; border-radius: 5px; }
+.encl-key li.gold { background: var(--gold-bg); color: var(--fg); }
+.encl-key b { font-family: var(--mono); }
+.encl-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 14px; }
+.encl-rcard { background: var(--surface); border: 1px solid var(--line); border-top: 4px solid var(--rc); border-radius: 12px; box-shadow: var(--shadow); padding: 12px 14px; min-width: 0; }
+.encl-rcard h4 { margin: 0 0 6px; font: 600 14px var(--body); }
+.encl-rcard h4 span { font: 600 11.5px var(--mono); }
+.encl-rcard .tex.block { display: block; overflow-x: auto; overflow-y: hidden; font-size: 0.92em; }
+.encl-mini { width: 100%; border-collapse: collapse; font: 12.5px var(--mono); font-variant-numeric: tabular-nums; }
+.encl-mini th, .encl-mini td { padding: 4px 6px; text-align: right; border-bottom: 1px solid var(--line); }
+.encl-mini thead th { color: var(--muted); font-weight: 500; }
+.encl-mini tbody th { text-align: left; }
+.encl-mini tr.gold th, .encl-mini tr.gold td { background: var(--gold-bg); }
+.encl-off { color: color-mix(in srgb, var(--muted) 55%, transparent); text-decoration: line-through; }
+.encl-scroll { overflow-x: auto; }
+.encl-code { margin: 14px 0 0; padding: 10px 12px; font: 12px/1.5 var(--mono); background: var(--raised); border-radius: 8px; overflow-x: auto; }
+.encl-plot { width: 100%; display: block; margin: 4px 0 6px; }
+.encl-plot .axis { stroke: var(--line); }
+.encl-plot .curve { fill: none; stroke: var(--rc, var(--accent)); stroke-width: 2; }
+.encl-plot .dot { fill: var(--muted); }
+.encl-plot .dot.gold { fill: var(--c6); }
+.encl-plot .pt { stroke: var(--surface); stroke-width: 1.5; }
+.encl-plot .mark { stroke: var(--fg); stroke-width: 1.5; }
+.encl-plot text { font: 10.5px var(--mono); fill: var(--muted); }
+.encl-lossplot { max-width: 340px; }
+.encl-cap { font: 12px var(--mono); color: var(--muted); margin: 0 0 10px; }
+.encl-stack { display: flex; height: 28px; border-radius: 8px; overflow: hidden; margin: 6px 0 4px; background: var(--raised); }
+.encl-stack span { display: flex; align-items: center; justify-content: center; min-width: 2px; flex-basis: 0; font: 600 11px var(--mono); white-space: nowrap; overflow: hidden; color: var(--muted); background: color-mix(in srgb, var(--muted) 22%, var(--surface)); border-right: 1px solid var(--surface); }
+.encl-stack span.gold { background: color-mix(in srgb, var(--c6) 55%, var(--surface)); color: var(--fg); }
+.encl-grads { display: grid; gap: 3px; font: 11.5px var(--mono); }
+.encl-grads > div { display: grid; grid-template-columns: 28px 1fr 56px; align-items: center; gap: 6px; }
+.encl-grads > div > span:last-child { text-align: right; }
+.encl-grads > div.gold { color: var(--c6); font-weight: 600; }
+.encl-grads .track { position: relative; height: 10px; background: var(--raised); border-radius: 3px; }
+.encl-grads i { position: absolute; top: 0; bottom: 0; left: 50%; border-radius: 3px; }
+.encl-grads i.up { left: auto; right: 50%; background: color-mix(in srgb, var(--c6) 60%, transparent); }
+.encl-grads i.down { background: color-mix(in srgb, var(--c5) 60%, transparent); }
+.encl-ok { color: var(--c6); font-weight: 600; }
+.encl-bad { color: var(--c5); font-weight: 600; }
+.encl-pvals { display: flex; flex-wrap: wrap; gap: 2px 10px; font: 11.5px var(--mono); color: var(--muted); }
+.encl-pvals .gold, .encl-plot text.gold { color: var(--c6); fill: var(--c6); font-weight: 600; }
+.encl-norm { max-width: 760px; margin: 10px auto 4px; }
+.encl-norm td { text-align: center; font-family: inherit; }
+.encl-common .encl-cap { text-align: center; }

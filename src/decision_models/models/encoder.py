@@ -279,6 +279,7 @@ class MaskedEncoder(base.DecisionModel):
       fmt: The prompt format.
       loss_kind: The training recipe (losses.option.LOG_WEIGHTS).
       pack_tokens: Tokens per packed forward pass (FA2 varlen only).
+      pack_train: Training packs rows too (FA2 varlen only).
     """
 
     network: Scorer
@@ -291,11 +292,13 @@ class MaskedEncoder(base.DecisionModel):
         fmt: config.FormatConfig,
         loss_kind: config.Loss = "listwise",
         pack_tokens: int = 32768,
+        pack_train: bool = False,
     ) -> None:
         super().__init__(network, tokenizer, device)
         self.fmt = fmt
         self.loss_kind = loss_kind
         self.pack_tokens = pack_tokens
+        self.pack_train = pack_train
 
     @classmethod
     def build(
@@ -326,7 +329,13 @@ class MaskedEncoder(base.DecisionModel):
         )
         scorer = Scorer(model, *verbalizer_ids(tokenizer, fmt)).to(device)
         return cls(
-            scorer, tokenizer, device, fmt, loss_kind, model_cfg.pack_tokens
+            scorer,
+            tokenizer,
+            device,
+            fmt,
+            loss_kind,
+            model_cfg.pack_tokens,
+            model_cfg.pack_train,
         )
 
     @classmethod
@@ -427,6 +436,43 @@ class MaskedEncoder(base.DecisionModel):
         value = option.loss(s, ex.gold, self.loss_kind)
         hit = (s.argmax() == ex.gold).float()
         return base.LossOutput(value, {"loss": value.detach(), "accuracy": hit})
+
+    def training_packs(
+        self,
+        examples: Sequence[schema.Example],
+        rngs: Sequence[random.Random],
+    ) -> list[Any]:
+        """With pack_train on varlen: encoded rows in packs of pack_tokens."""
+        if not (self.pack_train and self.is_packed):
+            return super().training_packs(examples, rngs)
+        encoded = [
+            self.encode(e, rng) for e, rng in zip(examples, rngs, strict=True)
+        ]
+        groups = flash_attention.groups(
+            [len(e.input_ids) for e in encoded], self.pack_tokens
+        )
+        return [[encoded[i] for i in g] for g in groups]
+
+    def pack_loss(self, pack: Any) -> list[base.LossOutput]:
+        """One forward pass over a pack of encoded rows; a loss per row."""
+        if not (self.pack_train and self.is_packed):
+            return super().pack_loss(pack)
+        packed = flash_attention.pack(
+            [(e.input_ids, e.masks) for e in pack], self.device
+        )
+        scores = self.network(
+            packed.input_ids, packed.masks, **packed.model_kwargs()
+        )
+        out = []
+        for e, s in zip(pack, scores.split(packed.splits), strict=True):
+            value = option.loss(s, e.gold, self.loss_kind)
+            hit = (s.argmax() == e.gold).float()
+            out.append(
+                base.LossOutput(
+                    value, {"loss": value.detach(), "accuracy": hit}
+                )
+            )
+        return out
 
     def save(self, path: pathlib.Path, accelerator: Any) -> None:
         """The encoder weights and tokenizer (fp32, as trained)."""

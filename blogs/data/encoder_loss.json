@@ -1,0 +1,87 @@
+{
+ "row": {
+  "id": "logiqa2:11f334198c1c2593",
+  "source": "logiqa2",
+  "options": [
+   "A cultural company asked a master of art to draw a set of postcards of the twelve women of Jinling in A Dream of Red Mansions, which were printed and sold.",
+   "Xiaotao made a set of clay sculptures changed by Sun WuKong in 72 to participate in the competition of handmade works of art organized by the district cultural center.",
+   "An entertainment company has developed a very popular animated film, which simultaneously launches toys and costumes of the protagonist's image.",
+   "Xiaoying collects photos of all the roles her idol star has played into a book and sells them among fans."
+  ],
+  "gold": 2,
+  "prompt": "State: Peripheral products refer to goods made by authorizing the use of characters or animals in animation, comics, games and other works.\n\nAccording to the above definition, which of the following options belongs to the peripheral product?\nMark the correct option with yes and every other option with no.\nOptions:\n[1] <|mask|> A cultural company asked a master of art to draw a set of postcards of the twelve women of Jinling in A Dream of Red Mansions, which were printed and sold.\n[2] <|mask|> Xiaotao made a set of clay sculptures changed by Sun WuKong in 72 to participate in the competition of handmade works of art organized by the district cultural center.\n[3] <|mask|> An entertainment company has developed a very popular animated film, which simultaneously launches toys and costumes of the protagonist's image.\n[4] <|mask|> Xiaoying collects photos of all the roles her idol star has played into a book and sells them among fans.",
+  "tokens": 202
+ },
+ "models": {
+  "base": {
+   "yes": [
+    -175.33096313476562,
+    -132.0611114501953,
+    -169.7799835205078,
+    -133.45169067382812
+   ],
+   "no": [
+    -175.4929962158203,
+    -130.9625244140625,
+    -169.01852416992188,
+    -132.26438903808594
+   ]
+  },
+  "ub_list": {
+   "yes": [
+    -57.87953186035156,
+    -57.60157775878906,
+    -56.54135513305664,
+    -57.83646011352539
+   ],
+   "no": [
+    -67.08977508544922,
+    -66.77416229248047,
+    -65.5538330078125,
+    -67.04674530029297
+   ]
+  },
+  "ub_yesno": {
+   "yes": [
+    -88.61534118652344,
+    -88.68811798095703,
+    -88.57449340820312,
+    -87.16374206542969
+   ],
+   "no": [
+    -87.68400573730469,
+    -88.3770980834961,
+    -90.32191467285156,
+    -86.70636749267578
+   ]
+  },
+  "ub_sig": {
+   "yes": [
+    -84.39622497558594,
+    -84.34915161132812,
+    -81.7663803100586,
+    -84.2957534790039
+   ],
+   "no": [
+    -78.18397521972656,
+    -77.95853424072266,
+    -77.38826751708984,
+    -78.20217895507812
+   ]
+  },
+  "ub_sqrt": {
+   "yes": [
+    -85.20641326904297,
+    -82.73877716064453,
+    -72.29580688476562,
+    -80.1160888671875
+   ],
+   "no": [
+    -75.1609878540039,
+    -73.23728942871094,
+    -68.45367431640625,
+    -71.94612121582031
+   ]
+  }
+ }
+}

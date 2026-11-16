@@ -96,6 +96,19 @@ blogs/           the blog (React; `make blog`)
 configs/  scripts/  docs/  tests/
 ```
 
+## Citation
+
+If you use this repository, please cite:
+
+```bibtex
+@misc{mohapatra2026decisionmodels,
+  author = {Mohapatra, Astarag},
+  title = {decision-models},
+  year = {2026},
+  url = {https://github.com/Athe-kunal/decision-models},
+}
+```
+
 ## Development
 
 ```bash
