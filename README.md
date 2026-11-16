@@ -25,10 +25,28 @@ Two families share one interface, `DecisionModel` (`decision_models/models/base.
 | decoder | `TrieDecoder` | log-probability of "k]" after "Best answer: [" (a candidate trie; LLM-as-Jev, arXiv 2610.02076v3) | L_tree + KL anchors |
 | encoder | `MaskedEncoder` | MLM logit of " yes" (minus " no") at the mask in front of option k | softmax, sigmoid-norm or sqrt-softplus |
 
-## Install
+## Setup
 
 ```bash
-uv sync --extra dev                  # + --extra serve (local server), spans, profile, qwen35
+curl -LsSf https://astral.sh/uv/install.sh | sh
+```
+
+Clone the repo and install it:
+
+```bash
+git clone https://github.com/Athe-kunal/decision-models.git
+cd decision-models
+uv venv --python 3.11
+source .venv/bin/activate
+uv pip install -e .
+```
+
+Or point uv at the source and install `src/decision_models` without a checkout:
+
+```bash
+uv venv --python 3.11
+source .venv/bin/activate
+uv pip install "git+https://github.com/Athe-kunal/decision-models.git"
 ```
 
 Python 3.11+, a CUDA GPU for training. FlashAttention-2 is fetched from the Hugging Face Hub on first use.
