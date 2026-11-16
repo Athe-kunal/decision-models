@@ -1,24 +1,22 @@
 # Training
 
-A run is a YAML file under `configs/train/` plus `key=value` overrides. A typo or an invalid value fails at startup. The resolved config is saved to `<run.out>/config.yaml`.
+A run is a YAML file under [`configs/train/`](https://github.com/Athe-kunal/decision-models/tree/main/configs/train) plus `key=value` overrides. A typo or an invalid value fails at startup. The resolved config is saved to `<run.out>/config.yaml`.
 
-```bash
-make train-encoder CONFIG=configs/train/ultrabert_380m_sigmoid_norm.yaml GPUS=0
-make train-decoder CONFIG=configs/train/qwen3_0.6b_lora.yaml GPUS=0,1,2,3 ARGS="optim.lr=5e-5 run.out=runs/x"
-scripts/train.sh configs/train/qwen3_0.6b_full.yaml 0 run.seed=1     # same, in the background, log in <run.out>.log
-```
+`make train-encoder CONFIG=`[`configs/train/ultrabert_380m_sigmoid_norm.yaml`](https://github.com/Athe-kunal/decision-models/blob/main/configs/train/ultrabert_380m_sigmoid_norm.yaml)` GPUS=0`<br>
+`make train-decoder CONFIG=`[`configs/train/qwen3_0.6b_lora.yaml`](https://github.com/Athe-kunal/decision-models/blob/main/configs/train/qwen3_0.6b_lora.yaml)` GPUS=0,1,2,3 ARGS="optim.lr=5e-5 run.out=runs/x"`<br>
+`scripts/train.sh `[`configs/train/qwen3_0.6b_full.yaml`](https://github.com/Athe-kunal/decision-models/blob/main/configs/train/qwen3_0.6b_full.yaml)` 0 run.seed=1     # same, in the background, log in <run.out>.log`
 
 `GPUS` sets the processes: DDP for encoders, FSDP2 for decoders. `optim.batch_size` is the total across all GPUs.
 
 | config | model | loss |
 |---|---|---|
-| `ultrabert_380m_softmax_yes.yaml` | UltraBERT-380M | softmax over ℓ(yes) |
-| `ultrabert_380m_softmax_yesno.yaml` | UltraBERT-380M | softmax over ℓ(yes) − ℓ(no) |
-| `ultrabert_380m_sigmoid_norm.yaml` | UltraBERT-380M | σ(s) normalised over the options |
-| `ultrabert_380m_sqrt_softplus.yaml` | UltraBERT-380M | √softplus(s) normalised over the options |
-| `ettin_encoder_400m.yaml` | Ettin-400M | sigmoid-norm |
-| `qwen3_0.6b_lora.yaml`, `qwen3_4b_lora.yaml` | Qwen3, LoRA r16 | L_tree + KL anchors |
-| `qwen3_0.6b_full.yaml` | Qwen3-0.6B, full fine-tuning | L_tree + KL anchors |
+| [`ultrabert_380m_softmax_yes.yaml`](https://github.com/Athe-kunal/decision-models/blob/main/configs/train/ultrabert_380m_softmax_yes.yaml) | UltraBERT-380M | softmax over ℓ(yes) |
+| [`ultrabert_380m_softmax_yesno.yaml`](https://github.com/Athe-kunal/decision-models/blob/main/configs/train/ultrabert_380m_softmax_yesno.yaml) | UltraBERT-380M | softmax over ℓ(yes) − ℓ(no) |
+| [`ultrabert_380m_sigmoid_norm.yaml`](https://github.com/Athe-kunal/decision-models/blob/main/configs/train/ultrabert_380m_sigmoid_norm.yaml) | UltraBERT-380M | σ(s) normalised over the options |
+| [`ultrabert_380m_sqrt_softplus.yaml`](https://github.com/Athe-kunal/decision-models/blob/main/configs/train/ultrabert_380m_sqrt_softplus.yaml) | UltraBERT-380M | √softplus(s) normalised over the options |
+| [`ettin_encoder_400m.yaml`](https://github.com/Athe-kunal/decision-models/blob/main/configs/train/ettin_encoder_400m.yaml) | Ettin-400M | sigmoid-norm |
+| [`qwen3_0.6b_lora.yaml`](https://github.com/Athe-kunal/decision-models/blob/main/configs/train/qwen3_0.6b_lora.yaml), [`qwen3_4b_lora.yaml`](https://github.com/Athe-kunal/decision-models/blob/main/configs/train/qwen3_4b_lora.yaml) | Qwen3, LoRA r16 | L_tree + KL anchors |
+| [`qwen3_0.6b_full.yaml`](https://github.com/Athe-kunal/decision-models/blob/main/configs/train/qwen3_0.6b_full.yaml) | Qwen3-0.6B, full fine-tuning | L_tree + KL anchors |
 
 ## Arguments
 
@@ -86,12 +84,10 @@ runs/x/
 
 ## Evaluate
 
-```bash
-scripts/evaluate.sh encoder runs/x 0                     # dev split + external benchmarks
-decision-models-evaluate --config configs/evaluate/encoder.yaml model.path=runs/x rows.part=test tag=test
-decision-models-evaluate --config configs/evaluate/decoder.yaml model.path=Qwen/Qwen3-0.6B model.adapter=runs/q/adapter out=runs/q
-decision-models-benchmarks --config configs/evaluate/benchmarks.yaml model.kind=encoder model.path=runs/x out=runs/x
-```
+`scripts/evaluate.sh encoder runs/x 0                     # dev split + external benchmarks`<br>
+`decision-models-evaluate --config `[`configs/evaluate/encoder.yaml`](https://github.com/Athe-kunal/decision-models/blob/main/configs/evaluate/encoder.yaml)` model.path=runs/x rows.part=test tag=test`<br>
+`decision-models-evaluate --config `[`configs/evaluate/decoder.yaml`](https://github.com/Athe-kunal/decision-models/blob/main/configs/evaluate/decoder.yaml)` model.path=Qwen/Qwen3-0.6B model.adapter=runs/q/adapter out=runs/q`<br>
+`decision-models-benchmarks --config `[`configs/evaluate/benchmarks.yaml`](https://github.com/Athe-kunal/decision-models/blob/main/configs/evaluate/benchmarks.yaml)` model.kind=encoder model.path=runs/x out=runs/x`
 
 | key | meaning |
 |---|---|
@@ -102,6 +98,8 @@ decision-models-benchmarks --config configs/evaluate/benchmarks.yaml model.kind=
 | `out`, `tag` | writes `<out>/eval_<tag>.json` |
 
 ## From Python
+
+[`configs/train/ultrabert_380m_sigmoid_norm.yaml`](https://github.com/Athe-kunal/decision-models/blob/main/configs/train/ultrabert_380m_sigmoid_norm.yaml)
 
 ```python
 from decision_models import config

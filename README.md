@@ -37,13 +37,11 @@ Or in Docker ([guide](docs/docker.md)): `make docker-build TARGET=encoder` (or `
 
 ## Quickstart
 
-```bash
-make data                                                                  # build the training mix
-make train-encoder CONFIG=configs/train/ultrabert_380m_sigmoid_norm.yaml GPUS=0
-make train-decoder CONFIG=configs/train/qwen3_0.6b_lora.yaml GPUS=0,1,2,3
-scripts/evaluate.sh encoder runs/ultrabert_380m_lr1.5e-5_sigmoidnorm 0
-decision-models-serve model.kind=encoder model.path=runs/ultrabert_380m_lr1.5e-5_sigmoidnorm   # http://127.0.0.1:8767/
-```
+`make data                                                                  # build the training mix`<br>
+`make train-encoder CONFIG=`[`configs/train/ultrabert_380m_sigmoid_norm.yaml`](https://github.com/Athe-kunal/decision-models/blob/main/configs/train/ultrabert_380m_sigmoid_norm.yaml)` GPUS=0`<br>
+`make train-decoder CONFIG=`[`configs/train/qwen3_0.6b_lora.yaml`](https://github.com/Athe-kunal/decision-models/blob/main/configs/train/qwen3_0.6b_lora.yaml)` GPUS=0,1,2,3`<br>
+`scripts/evaluate.sh encoder runs/ultrabert_380m_lr1.5e-5_sigmoidnorm 0`<br>
+`decision-models-serve model.kind=encoder model.path=runs/ultrabert_380m_lr1.5e-5_sigmoidnorm   # http://127.0.0.1:8767/`
 
 ```python
 from decision_models import config, models

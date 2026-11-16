@@ -43,10 +43,8 @@ Writes `rows.jsonl` and `summary.json`: span AP / top-1, drop@k, LDS, seconds.
 
 ## Evidence head (encoders)
 
-```bash
-make evidence CONFIG=configs/evidence/ultrabert_380m.yaml GPUS=0
-decision-models-train-evidence --config configs/evidence/ultrabert_380m.yaml data.labels=gold out=runs/ev_gold
-```
+`make evidence CONFIG=`[`configs/evidence/ultrabert_380m.yaml`](https://github.com/Athe-kunal/decision-models/blob/main/configs/evidence/ultrabert_380m.yaml)` GPUS=0`<br>
+`decision-models-train-evidence --config `[`configs/evidence/ultrabert_380m.yaml`](https://github.com/Athe-kunal/decision-models/blob/main/configs/evidence/ultrabert_380m.yaml)` data.labels=gold out=runs/ev_gold`
 
 ```python
 from decision_models.evidence import head as head_lib
@@ -60,9 +58,7 @@ pred.answer, pred.tokens.where, pred.probabilities      # (part, start, end) and
 
 ## Generated evidence labels (best-of-N, SelfCite reward)
 
-```bash
-uv sync --extra spans
-GPUS="0 1" PORTS="8011 8012" scripts/serve_labeller.sh
-decision-models-spans --config configs/evidence/spans.yaml \
-    "base_url=[http://127.0.0.1:8011/v1,http://127.0.0.1:8012/v1]" out=runs/spans/train.jsonl
-```
+`uv sync --extra spans`<br>
+`GPUS="0 1" PORTS="8011 8012" scripts/serve_labeller.sh`<br>
+`decision-models-spans --config `[`configs/evidence/spans.yaml`](https://github.com/Athe-kunal/decision-models/blob/main/configs/evidence/spans.yaml)` \`<br>
+`    "base_url=[http://127.0.0.1:8011/v1,http://127.0.0.1:8012/v1]" out=runs/spans/train.jsonl`

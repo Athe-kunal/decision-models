@@ -122,11 +122,9 @@ During training both models shuffle the options per row (`encode(..., rng)`), so
 
 ## Build the training mix
 
-```bash
-make data          # download the pinned sources, then build data/splits/reason_long_nimble
-decision-models-build-data --config configs/data/reason_long_nimble.yaml \
-    datasets=[musique,contractnli] per_dataset=500 out=data/splits/small
-```
+`make data          # download the pinned sources, then build data/splits/reason_long_nimble`<br>
+`decision-models-build-data --config `[`configs/data/reason_long_nimble.yaml`](https://github.com/Athe-kunal/decision-models/blob/main/configs/data/reason_long_nimble.yaml)` \`<br>
+`    datasets=[musique,contractnli] per_dataset=500 out=data/splits/small`
 
 | argument | default | meaning |
 |---|---|---|

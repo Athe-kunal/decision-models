@@ -31,10 +31,8 @@ make docker-run TARGET=encoder
 
 Inside the container, train the same way as on the host:
 
-```bash
-make train-encoder CONFIG=configs/train/ultrabert_380m_sigmoid_norm.yaml GPUS=0
-make train-decoder CONFIG=configs/train/qwen3_0.6b_lora.yaml GPUS=0,1,2,3 ARGS="data.source=Athekunal/llm-jev-reason-long"
-```
+`make train-encoder CONFIG=`[`configs/train/ultrabert_380m_sigmoid_norm.yaml`](https://github.com/Athe-kunal/decision-models/blob/main/configs/train/ultrabert_380m_sigmoid_norm.yaml)` GPUS=0`<br>
+`make train-decoder CONFIG=`[`configs/train/qwen3_0.6b_lora.yaml`](https://github.com/Athe-kunal/decision-models/blob/main/configs/train/qwen3_0.6b_lora.yaml)` GPUS=0,1,2,3 ARGS="data.source=Athekunal/llm-jev-reason-long"`
 
 | flag | why |
 |---|---|
