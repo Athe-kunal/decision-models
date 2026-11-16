@@ -50,22 +50,21 @@ def main() -> None:
     out = pathlib.Path(cfg.out)
     out.parent.mkdir(parents=True, exist_ok=True)
     with open(out, "w") as f:
-        if cfg.citation is None:
+        citation = cfg.citation
+        if citation is None:
             for row, s in zip(rows, model.score(rows), strict=True):
                 f.write(json.dumps(record(row, *base.decide(s))) + "\n")
         else:
-            cite.prepare(model, cfg.citation)
+            cite.prepare(model, citation)
             for i, row in enumerate(rows):
                 result, seconds = base.timed(
                     model.device,
-                    lambda row=row: cite.cite(model, row, cfg.citation),
+                    lambda row=row: cite.cite(model, row, citation),
                 )
                 line = {
                     **record(row, result.answer, result.q),
                     "seconds": seconds,
-                    "evidence": cite.top_sentences(
-                        row, result, cfg.citation.top_k
-                    ),
+                    "evidence": cite.top_sentences(row, result, citation.top_k),
                 }
                 f.write(json.dumps(line, ensure_ascii=False) + "\n")
                 if (i + 1) % 50 == 0 or i + 1 == len(rows):

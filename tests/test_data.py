@@ -96,3 +96,14 @@ def test_rows_with_evidence_all_rows_grouped_by_dataset(monkeypatch) -> None:
     picked = sentences.rows_with_evidence(rows, per=0)
     assert [r.source for r in picked] == ["alpha"] * 4 + ["zeta"] * 4
     assert [r.id for r in picked[:4]] == [f"alpha:{i}" for i in range(4)]
+
+
+def test_trainer_eval_rows_are_dev_rows_only() -> None:
+    rows = _rows(3, 300)
+    dev = sampling.select_part(rows, "dev")
+    assert sampling.dev_rows(rows, sampling.DEV_PER, 7) == dev
+    picked = sampling.dev_rows(rows, 40, seed=1)
+    assert len(picked) == 3 * 40
+    assert {r.id for r in picked} <= {r.id for r in dev}
+    with pytest.raises(ValueError, match="dev part"):
+        sampling.dev_rows(rows, sampling.DEV_PER + 1)

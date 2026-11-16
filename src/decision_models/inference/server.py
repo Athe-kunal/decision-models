@@ -58,7 +58,8 @@ def make_app(
     import fastapi
     from fastapi import responses
 
-    if evidence is not None and not isinstance(model, encoder.MaskedEncoder):
+    encoder_model = model if isinstance(model, encoder.MaskedEncoder) else None
+    if evidence is not None and encoder_model is None:
         raise ValueError("the evidence head needs an encoder model")
     page = PAGE.read_text()
     by_id = {r.id: r for r in rows}
@@ -164,28 +165,29 @@ def make_app(
             raise fastapi.HTTPException(400, "no citation method loaded")
         r = get(id)
         out: dict[str, Any] = {}
-        if cfg.citation:
+        citation = cfg.citation
+        if citation:
             with lock:
                 result, seconds = base.timed(
-                    model.device, lambda: cite.cite(model, r, cfg.citation)
+                    model.device, lambda: cite.cite(model, r, citation)
                 )
             w = result.weights.tolist()
-            top = cite.top_sentences(r, result, max(3, cfg.citation.top_k))
+            top = cite.top_sentences(r, result, max(3, citation.top_k))
             out["contextcite"] = {
                 "w": w,
                 "top": [x["index"] for x in top[:3]],
-                "evidence": top[: cfg.citation.top_k],
+                "evidence": top[: citation.top_k],
                 "answer": result.answer,
                 "seconds": seconds,
                 "metrics": metrics.span_metrics(r, result.sentences, w)
                 if r.has_spans and len(w) >= 2
                 else None,
             }
-        if evidence is not None:
+        if evidence is not None and encoder_model is not None:
             with lock:
                 pred, seconds = base.timed(
                     model.device,
-                    lambda: head_lib.predict(model, evidence.head, r),  # type: ignore[arg-type]
+                    lambda: head_lib.predict(encoder_model, evidence.head, r),
                 )
             out["evidence"] = {
                 "answer": pred.answer,

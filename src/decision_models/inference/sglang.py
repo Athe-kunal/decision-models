@@ -14,7 +14,6 @@ and the trie's deeper nodes are sent after the prompts so they hit the cache.
 from collections.abc import Sequence
 import concurrent.futures
 import json
-import pathlib
 from typing import Any
 import urllib.request
 
@@ -179,7 +178,7 @@ def main() -> None:
             out.write(json.dumps(line) + "\n")
     if out:
         out.close()
-        logger.info("wrote {}", pathlib.Path(cfg.out))
+        logger.info("wrote {}", out.name)
 
 
 if __name__ == "__main__":

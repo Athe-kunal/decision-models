@@ -75,6 +75,7 @@ def test_train_encoder(data_dir, encoder_dir, encoder_format, tmp_path) -> None:
         ),
     )
     cfg = omegaconf.OmegaConf.to_object(raw)
+    assert isinstance(cfg, config.EncoderTrainConfig)
     trainer.launch(
         cfg,
         raw,
@@ -139,6 +140,7 @@ def test_train_decoder(data_dir, decoder_dir, tmp_path, finetune) -> None:
         ),
     )
     cfg = omegaconf.OmegaConf.to_object(raw)
+    assert isinstance(cfg, config.DecoderTrainConfig)
     trainer.launch(
         cfg, raw, lambda device: decoder.TrieDecoder.for_training(cfg, device)
     )

@@ -7,6 +7,7 @@ Usage (or: make sglang-merge):
 SGLang's score API cannot select a LoRA adapter, so it serves merged weights.
 """
 
+import json
 import pathlib
 
 from loguru import logger
@@ -20,8 +21,11 @@ def main() -> None:
     cfg, _ = config.from_command_line(config.MergeConfig, __doc__)
     model = decoder.TrieDecoder.for_inference(cfg.model, cfg.adapter, "cpu")
     out = pathlib.Path(cfg.out)
-    model.network.save_pretrained(out)
+    model.unwrapped.save_pretrained(str(out))
     model.tokenizer.save_pretrained(out)
+    (out / decoder.MERGED_MARKER).write_text(
+        json.dumps({"model": cfg.model, "adapter": cfg.adapter}, indent=1)
+    )
     logger.info("merged {} + {} -> {}", cfg.model, cfg.adapter, out)
 
 

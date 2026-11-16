@@ -42,6 +42,25 @@ def per_dataset(
     return out
 
 
+def dev_rows(
+    rows: Sequence[schema.Example], per: int, seed: int = DEV_SEED
+) -> list[schema.Example]:
+    """`per` rows per dataset of the dev part, drawn with `seed`.
+
+    The rows the trainer evaluates on: never test rows, whatever `per` and
+    `seed`. With per = DEV_PER this is the whole dev part, in its order.
+
+    Raises:
+      ValueError: If `per` exceeds DEV_PER (the dev part has no more rows).
+    """
+    if per > DEV_PER:
+        raise ValueError(
+            f"data.eval_per={per}: the dev part has {DEV_PER} rows per dataset"
+        )
+    dev = select_part(rows, "dev")
+    return dev if per == DEV_PER else per_dataset(dev, per, seed)
+
+
 def select_part(
     rows: Sequence[schema.Example], part: config.Part = "all"
 ) -> list[schema.Example]:

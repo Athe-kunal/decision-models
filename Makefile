@@ -47,7 +47,7 @@ help:
 	@echo "make docs            serve the docs site (mkdocs.yml) at http://127.0.0.1:$(DOCS_PORT)/"
 	@echo "make docker-build  TARGET=encoder|decoder|qwen35 -> image decision-models:TARGET (docs/docker.md)"
 	@echo "make docker-run    TARGET=... shell with all GPUs, HF cache and runs/ mounted"
-	@echo "make test / lint / format"
+	@echo "make test / lint (ruff + ty) / format"
 
 install:
 	uv sync --extra dev
@@ -128,6 +128,7 @@ test:
 
 lint:
 	.venv/bin/ruff check src tests analysis && .venv/bin/ruff format --check src tests analysis
+	.venv/bin/ty check
 
 format:
 	.venv/bin/ruff format src tests analysis && .venv/bin/ruff check --fix src tests analysis

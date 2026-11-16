@@ -191,12 +191,14 @@ def banking77() -> list[schema.Example]:
         _example(
             "banking77",
             i,
-            [("Message", r.text)],
+            [("Message", text)],
             intent.INTENT_QUESTION,
             intents,
-            intents.index(r.category),
+            intents.index(category),
         )
-        for i, r in enumerate(frame.itertuples())
+        for i, (text, category) in enumerate(
+            zip(frame["text"], frame["category"], strict=True)
+        )
     ]
 
 

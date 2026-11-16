@@ -51,7 +51,7 @@ from decision_models.evidence import head as head_lib
 from decision_models.models import encoder
 
 model = encoder.MaskedEncoder.from_run("runs/ultrabert_380m_lr1.5e-5_sigmoidnorm")
-evidence = head_lib.load("runs/evidence_ultrabert_380m_sigmoidnorm", model)   # head + tuned threshold
+evidence = head_lib.load("runs/evidence_ultrabert_380m_sigmoidnorm", model)   # head + dev-tuned threshold
 pred = head_lib.predict(model, evidence.head, row)
 pred.answer, pred.tokens.where, pred.probabilities      # (part, start, end) and p per token
 ```

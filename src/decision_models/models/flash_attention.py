@@ -29,10 +29,15 @@ import pathlib
 import platform
 import sys
 from types import ModuleType
+from typing import TYPE_CHECKING
 from typing import Any
 
 import torch
 from torch import nn
+
+if TYPE_CHECKING:
+    from peft import PeftModel
+    from transformers import PreTrainedModel
 
 NAME = "varlen_bidirectional"
 DECODER_NAME = "packed"
@@ -46,7 +51,9 @@ def kernel() -> ModuleType:
     """The FA2 module for this torch / CUDA build, from the Hub snapshot.
 
     Raises:
-      RuntimeError: On a GPU older than Ampere (FA2 needs sm_80+).
+      RuntimeError: On a GPU older than Ampere (FA2 needs sm_80+), or a CPU
+        build of torch.
+      ImportError: If the downloaded build cannot be imported.
       FileNotFoundError: If the Hub repo has no build for this torch / CUDA
         version and CPU architecture.
     """
@@ -59,6 +66,8 @@ def kernel() -> ModuleType:
             f"FlashAttention-2 needs an Ampere or newer GPU (sm_80+), not "
             f"{name}; use attention=sdpa"
         )
+    if torch.version.cuda is None:
+        raise RuntimeError("FlashAttention-2 needs a CUDA build of torch")
     major, minor = torch.__version__.split(".")[:2]
     cuda = torch.version.cuda.replace(".", "")
     arch = platform.machine()  # x86_64 or aarch64 (Grace Hopper / Blackwell)
@@ -77,6 +86,8 @@ def kernel() -> ModuleType:
         f"{path}/__init__.py",
         submodule_search_locations=[path],
     )
+    if spec is None or spec.loader is None:
+        raise ImportError(f"cannot load the FA2 kernel from {path}")
     module = importlib.util.module_from_spec(spec)
     sys.modules["flash_attn_hub"] = module
     spec.loader.exec_module(module)
@@ -212,7 +223,7 @@ def decoder_attention(
     return out[None], None
 
 
-def use_decoder(model: nn.Module) -> None:
+def use_decoder(model: "PreTrainedModel | PeftModel") -> None:
     """Switches a decoder to DECODER_NAME (flex or FA2, per call)."""
     from transformers import AttentionInterface
 
@@ -220,7 +231,7 @@ def use_decoder(model: nn.Module) -> None:
     model.set_attn_implementation(DECODER_NAME)
 
 
-def use(model: nn.Module) -> None:
+def use(model: "PreTrainedModel") -> None:
     """Switches the model's attention to NAME (registered once)."""
     from transformers import AttentionInterface
 
@@ -228,7 +239,7 @@ def use(model: nn.Module) -> None:
     model.set_attn_implementation(NAME)
 
 
-def is_used(model: nn.Module) -> bool:
+def is_used(model: "PreTrainedModel") -> bool:
     """Whether the model runs this attention, so rows can be packed."""
     return model.config._attn_implementation == NAME
 

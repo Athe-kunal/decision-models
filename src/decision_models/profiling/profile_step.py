@@ -23,7 +23,7 @@ snapshot also shows the first step (AdamW creating its state, compile).
 """
 
 from collections.abc import Callable
-from collections.abc import Iterator
+from collections.abc import Generator
 import contextlib
 import dataclasses
 import json
@@ -142,7 +142,7 @@ class Phases:
         self.rows: list[dict[str, Any]] = []
 
     @contextlib.contextmanager
-    def __call__(self, name: str, row: int | None = None) -> Iterator[None]:
+    def __call__(self, name: str, row: int | None = None) -> Generator[None]:
         """Names (and when measuring, records the memory of) one phase."""
         if not self.measure:
             with record_function(name):
@@ -263,6 +263,9 @@ def main() -> None:
     torch.manual_seed(args.seed)
 
     tok = AutoTokenizer.from_pretrained(args.model)
+    pad = None if tok is None else tok.pad_token_id
+    if tok is None or pad is None:
+        raise ValueError(f"{args.model}'s tokenizer has no pad token")
     rows = pick_rows(storage.load_examples(args.data, "train"), tok, args)
     lengths = [len(ex.input_ids) for ex in rows]
     logger.info(
@@ -305,7 +308,7 @@ def main() -> None:
         for k in range(n):
             t0 = time.time()
             loss = train_step(
-                model, opt, next(batches), device, tok.pad_token_id, phase, args
+                model, opt, next(batches), device, pad, phase, args
             )
             torch.cuda.synchronize()
             logger.info(
@@ -373,9 +376,7 @@ def main() -> None:
         with_stack=True,
         with_flops=True,
         # verbose: keep the Python stacks for ops_by_stack and export_stacks.
-        experimental_config=torch._C._profiler._ExperimentalConfig(
-            verbose=True
-        ),
+        experimental_config=torch.profiler._ExperimentalConfig(verbose=True),
     ) as prof:
         run("profile", 1 + args.profile_steps, after_step=prof.step)
     logger.info("done: {}", out)

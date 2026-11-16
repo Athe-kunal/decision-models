@@ -1,6 +1,6 @@
 # decision-models
 
-Models that pick one option for a question about a document in a single forward pass, and show the sentences behind the pick. Results and figures are in the [blog post](blog/).
+Models that pick one option for a question about a document in a single forward pass, and show the sentences behind the pick. Results and figures are in the [blog post](https://athe-kunal.github.io/decision-models/blog/).
 
 | family | class | score of option k | loss |
 |---|---|---|---|

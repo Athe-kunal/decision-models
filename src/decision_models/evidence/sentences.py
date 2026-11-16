@@ -108,7 +108,9 @@ def split(
 
 
 def ablate(
-    example: schema.Example, sentences: Sequence[Sentence], keep: Sequence[bool]
+    example: schema.Example,
+    sentences: Sequence[Sentence],
+    keep: Sequence[bool] | np.ndarray,
 ) -> schema.Example:
     """The example with only the kept sentences (ContextCite's get_context).
 
@@ -144,6 +146,32 @@ def ablation_masks(
             [False, True], size=d, p=[1 - keep_prob, keep_prob]
         )
     return masks
+
+
+def held_out_masks(
+    n: int,
+    d: int,
+    seen: np.ndarray | None = None,
+    keep_prob: float = 0.5,
+    seed: int = 0,
+    tries: int = 64,
+) -> np.ndarray:
+    """[<= n, d] distinct ablation masks that are not rows of `seen`.
+
+    Draws masks as `ablation_masks` does (RandomState(seed + i)) and keeps
+    the new ones, up to n of them, from at most `tries` x n draws. Rows with
+    few sentences have few distinct masks, so fewer than n may come back.
+    """
+    taken = {m.tobytes() for m in (seen if seen is not None else [])}
+    out: list[np.ndarray] = []
+    for i in range(tries * n):
+        if len(out) == n:
+            break
+        mask = ablation_masks(1, d, keep_prob, seed + i)[0]
+        if mask.tobytes() not in taken:
+            taken.add(mask.tobytes())
+            out.append(mask)
+    return np.array(out, dtype=bool).reshape(len(out), d)
 
 
 def to_spans(sentences: Sequence[Sentence]) -> tuple[schema.Span, ...]:

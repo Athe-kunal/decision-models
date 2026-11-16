@@ -4,9 +4,11 @@ Usage:
   decision-models-build-data download_only=true     # fetch the pinned sources
   decision-models-build-data --config configs/data/reason_long_nimble.yaml
 
-Every dataset is deduplicated, decontaminated against the evaluation
-benchmarks, length-filtered and sampled; writes train.parquet, eval.parquet
-and manifest.json.
+Every dataset is deduplicated, length-filtered and sampled; its training
+rows are also decontaminated against the external benchmarks (eval rows come
+from the official validation split and are kept as released; the manifest
+counts those that overlap a benchmark). Writes train.parquet, eval.parquet
+and, last, manifest.json.
 """
 
 import collections
@@ -95,6 +97,12 @@ def build_dataset(
         )
     )
     stats["validation_too_long"] = len(deduped) - len(fit)
+    stats["eval_benchmark_overlap"] = int(
+        (
+            (np.asarray(eval_set["ngram_mask"]) != 0)
+            | (np.asarray(eval_set["sentence_mask"]) != 0)
+        ).sum()
+    )
     # Each example is counted at its first drop.
     kept, copies, conflict = processing.dedupe_indices(
         train["input_key"], train["answer"]
@@ -134,7 +142,7 @@ def build_dataset(
             clean["stratum"],
             per_dataset,
             rng,
-            source.stratification and source.stratification.shares,
+            source.stratification.shares if source.stratification else None,
             source.name,
         )
     )
@@ -239,6 +247,9 @@ def build(cfg: config.BuildDataConfig) -> dict[str, Any]:
     random.Random(base.SEED).shuffle(order)
     train = train.select(order)
     evals = datasets.concatenate_datasets(eval_parts)
+    # The manifest goes first and comes back last: a build that dies between
+    # the files leaves no manifest describing files it did not write.
+    (out / "manifest.json").unlink(missing_ok=True)
     storage.save(train, out / "train.parquet")
     storage.save(evals, out / "eval.parquet")
     manifest["totals"] = {"train": len(train), "eval": len(evals)}

@@ -15,6 +15,7 @@ def test_decoder_legal_mass_and_text_mode(
         trie_decoder, [example], {example.id}, examples
     )
     (r,) = results
+    assert r.root_legal_mass is not None
     assert 0.0 <= r.root_legal_mass <= 1.0
     assert r.gen_valid and r.gen_correct
     assert examples and examples[0]["id"] == example.id

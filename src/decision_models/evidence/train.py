@@ -292,25 +292,29 @@ def tune_threshold(
     examples: Sequence[schema.Example],
     report: Sequence[schema.Example],
 ) -> dict[str, Any]:
-    """Tunes one word threshold on non-report rows; reports P / R / F1.
+    """Tunes one word threshold on dev rows; reports P / R / F1.
+
+    The tuning rows are dev-part rows with gold evidence (never test rows):
+    all of them with `data.tune_part: dev`, else those that are not report
+    rows.
 
     Raises:
       ValueError: If tuning and report rows overlap, or no tuning rows remain.
     """
     data = cfg.data
     report_ids = {r.id for r in report}
+    dev = sentences.rows_with_evidence(examples, None, data.eval_seed, "dev")
     if data.tune_part is not None:
-        held = sentences.rows_with_evidence(
-            examples, None, data.eval_seed, data.tune_part
-        )
+        held = dev
         if {r.id for r in held} & report_ids:
             raise ValueError("the tuning rows overlap the report rows")
     else:
-        held = [r for r in examples if r.has_spans and r.id not in report_ids]
+        held = [r for r in dev if r.id not in report_ids]
     if not held:
         raise ValueError(
-            "no rows left to tune the word threshold on: every row with gold "
-            "spans is a report row; set data.tune_part or data.eval_per > 0"
+            "no dev rows left to tune the word threshold on: every dev row "
+            "with gold evidence is a report row; report on data.eval_part: "
+            "test, or lower data.eval_per"
         )
     s, y, _ = _word_scores(model, head, held)
     grid = np.unique(np.quantile(s, np.linspace(0, 1, 401)))

@@ -11,11 +11,13 @@ Usage (trains theta; stage 1 is cached in <out>/data.npz):
 """
 
 import collections
-from collections.abc import Iterator
+from collections.abc import Generator
 import contextlib
 import json
 import pathlib
+from typing import TYPE_CHECKING
 from typing import Any
+from typing import cast
 
 from loguru import logger
 import numpy as np
@@ -32,6 +34,9 @@ from decision_models.evidence import sentences as sentences_lib
 from decision_models.models import base
 from decision_models.models import encoder
 from decision_models.models import flash_attention
+
+if TYPE_CHECKING:
+    from transformers import PreTrainedModel
 
 CAPTURE = "at2_capture"  # Attention implementation name while capturing.
 
@@ -54,13 +59,14 @@ def _capturing_attention(store: dict[int, torch.Tensor]) -> Any:
             q = query[0][:, at2_rows].float()  # [H, Q, D]
             k = key[0].float()  # [Hkv, N, D]
             k = k.repeat_interleave(q.shape[0] // k.shape[0], 0)  # [H, N, D]
-            s = (q @ k.transpose(1, 2)) * scaling  # [H, Q, N]
+            scale = q.shape[-1] ** -0.5 if scaling is None else scaling
+            s = (q @ k.transpose(1, 2)) * scale  # [H, Q, N]
             if sliding_window is not None:
                 w = flash_attention.window(sliding_window)[0]
                 j = torch.arange(s.shape[-1], device=s.device)
                 far = (at2_rows[:, None] - j[None]).abs() > w
                 s = s.masked_fill(far, float("-inf"))
-            store[module.layer_idx] = s.softmax(-1)
+            store[cast(int, module.layer_idx)] = s.softmax(-1)
         return flash_attention.attention(
             module,
             query,
@@ -77,8 +83,8 @@ def _capturing_attention(store: dict[int, torch.Tensor]) -> Any:
 
 @contextlib.contextmanager
 def capturing(
-    model: nn.Module, store: dict[int, torch.Tensor]
-) -> Iterator[dict[int, torch.Tensor]]:
+    model: "PreTrainedModel", store: dict[int, torch.Tensor]
+) -> Generator[dict[int, torch.Tensor]]:
     """Switches `model` to the capturing attention, restoring it after.
 
     Requires FA2 varlen: under a custom implementation transformers builds no

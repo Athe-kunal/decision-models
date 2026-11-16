@@ -1,0 +1,39 @@
+name: Lint
+
+# ruff (style, imports, docstrings) and ty (types) on every push and PR.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: lint-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.9.4"
+          enable-cache: true
+
+      # ty resolves imports against the locked environment (torch, transformers).
+      - name: Install
+        run: uv sync --frozen --extra dev --extra serve --extra spans
+
+      - name: ruff check
+        run: uv run --no-sync ruff check src tests analysis
+
+      - name: ruff format
+        run: uv run --no-sync ruff format --check src tests analysis
+
+      - name: ty
+        run: uv run --no-sync ty check

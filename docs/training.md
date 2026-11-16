@@ -26,7 +26,7 @@ A run is a YAML file under [`configs/train/`](https://github.com/Athe-kunal/deci
 |---|---|---|
 | `data.source` | `data/splits/reason_long_nimble` | local folder of `train/eval.parquet`, or a Hub id (`Athekunal/llm-jev-reason-long`) |
 | `data.max_tokens` | 16384 | drop longer training rows |
-| `data.eval_per` | 100 | dev rows per dataset, evaluated before and after training |
+| `data.eval_per` | 100 | dev rows per dataset evaluated before and after training (at most 100; never test rows) |
 | `optim.lr` | 1e-4 | peak learning rate |
 | `optim.batch_size` | 32 | rows per optimizer step, total across all GPUs |
 | `optim.warmup_steps` / `warmup_ratio` | None / 0.05 | linear warmup, then linear decay |
@@ -47,7 +47,7 @@ A run is a YAML file under [`configs/train/`](https://github.com/Athe-kunal/deci
 | `model.id` | required | Hub id or path of the masked LM |
 | `model.revision` | None | Hub commit |
 | `model.attention` | `varlen` | `varlen` (FlashAttention-2, packs rows, Ampere or newer) or `sdpa` |
-| `model.pack_train` | false (true in the UltraBERT configs) | pack each GPU's rows into one varlen forward, about 4× faster |
+| `model.pack_train` | true | pack each GPU's rows into one varlen forward, about 4× faster; `false`, or `attention: sdpa` (Ettin), trains one row per forward |
 | `model.pack_tokens` | 32768 | tokens per packed forward |
 | `model.gradient_checkpointing` | true | recompute activations in the backward pass |
 | `format.template` | `decision_mlm` | `prompts/<name>.j2`, one `mask` per option |

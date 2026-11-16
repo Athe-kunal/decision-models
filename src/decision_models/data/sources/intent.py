@@ -87,10 +87,12 @@ def clinc150() -> base.Split:
 def massive() -> base.Split:
     """MASSIVE 1.1 en-US (60 intents): train / dev partitions."""
     path = download.local_path("massive", "amazon-massive-dataset-1.1.tar.gz")
+    member = "1.1/data/en-US.jsonl"
     with tarfile.open(path) as t:
-        data = [
-            json.loads(line) for line in t.extractfile("1.1/data/en-US.jsonl")
-        ]
+        f = t.extractfile(member)
+        if f is None:
+            raise FileNotFoundError(f"{path} has no file {member}")
+        data = [json.loads(line) for line in f]
     names = sorted({x["intent"] for x in data})
     return {
         split: intent_examples(

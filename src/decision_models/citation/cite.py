@@ -6,6 +6,7 @@ dropped sentences (packed on FA2 varlen for encoders).
 """
 
 from typing import Any
+from typing import TypeGuard
 
 from decision_models import config
 from decision_models.citation import context_cite
@@ -16,7 +17,9 @@ from decision_models.models import decoder
 from decision_models.models import flash_attention
 
 
-def packed(model: base.DecisionModel, cfg: config.CiteConfig) -> bool:
+def packed(
+    model: base.DecisionModel, cfg: config.CiteConfig
+) -> TypeGuard[decoder.TrieDecoder]:
     """Whether ContextCite runs one-pass packed masking for this model."""
     return isinstance(model, decoder.TrieDecoder) and cfg.removal != "delete"
 
@@ -40,8 +43,8 @@ def scorer(
     when `cfg.removal` is "reader", e.g. to measure what a weighting predicts.
     """
     if packed(model, cfg):
-        removal = "full" if exact else cfg.removal
-        return masked.packed_scorer(model, removal, cfg.budget)  # type: ignore[arg-type]
+        removal = "reader" if cfg.removal == "reader" and not exact else "full"
+        return masked.packed_scorer(model, removal, cfg.budget)
     return context_cite.deletion_scorer(model)
 
 

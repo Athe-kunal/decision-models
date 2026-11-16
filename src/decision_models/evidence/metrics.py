@@ -12,7 +12,7 @@ from decision_models.evidence import sentences as sentences_lib
 def span_metrics(
     example: schema.Example,
     sentences: Sequence[sentences_lib.Sentence],
-    weights: Sequence[float],
+    weights: Sequence[float] | np.ndarray,
     k: int = 3,
     beta: float = 1.0,
 ) -> dict[str, float] | None:

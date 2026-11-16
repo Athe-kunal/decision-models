@@ -122,7 +122,7 @@ def take_eval_indices(
         counts: dict[str, int] = {}
         for i in rows:
             counts[subsets[i]] = counts.get(subsets[i], 0) + 1
-        subset = max(counts, key=counts.get)  # first most common
+        subset = max(counts, key=counts.__getitem__)  # first most common
         by_subset.setdefault(subset, []).append(rows)
     for subset in by_subset:
         rng.shuffle(by_subset[subset])

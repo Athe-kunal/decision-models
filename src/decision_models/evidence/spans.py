@@ -245,7 +245,9 @@ def labelled_ids(out: pathlib.Path) -> set[str]:
     """The ids already written to out, for resuming.
 
     A partial last line (from a killed run) is cut from the file, so its row is
-    labelled again. A bad line anywhere else is an error.
+    labelled again; a complete last record whose newline was cut gets it
+    back, so the next record starts on its own line. A bad line anywhere else
+    is an error.
     """
     if not out.exists():
         return set()
@@ -259,6 +261,10 @@ def labelled_ids(out: pathlib.Path) -> set[str]:
                 raise ValueError(f"{out}:{number + 1}: not a record") from None
             logger.warning("{}: dropping the partial last line", out)
             out.write_text("".join(lines[:-1]))
+            return done
+    if lines and not lines[-1].endswith("\n"):
+        with open(out, "a") as f:
+            f.write("\n")
     return done
 
 

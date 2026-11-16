@@ -223,7 +223,7 @@ class Trainer:
         model = build_model(self.device)
         train = storage.load_examples(self.data.source, self.data.train_split)
         rows = self.fitting_rows(model, train)
-        evals = sampling.per_dataset(
+        evals = sampling.dev_rows(
             storage.load_examples(self.data.source, self.data.eval_split),
             self.data.eval_per,
             self.data.eval_seed,
@@ -237,7 +237,7 @@ class Trainer:
         optimizer = torch.optim.AdamW(
             params,
             lr=optim.lr,
-            betas=tuple(optim.betas),
+            betas=(optim.betas[0], optim.betas[1]),
             eps=optim.eps,
             weight_decay=optim.weight_decay,
         )

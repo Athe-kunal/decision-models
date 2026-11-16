@@ -13,6 +13,7 @@ import dataclasses
 import pathlib
 from typing import Literal
 from typing import TypeVar
+from typing import cast
 
 from omegaconf import MISSING
 from omegaconf import DictConfig
@@ -53,9 +54,10 @@ class DataConfig:
       train_split: Split the model is trained on.
       eval_split: Held-out split evaluated during training.
       max_tokens: Encoded training rows longer than this are dropped.
-      eval_per: Evaluation rows per source dataset (the dev sample).
-      eval_seed: Picks the evaluation rows; separate from `run.seed` so seed
-        replicates are scored on the same rows.
+      eval_per: Evaluation rows per source dataset, drawn from the dev part
+        (at most its 100; 100 = the whole dev part).
+      eval_seed: Picks the evaluation rows when eval_per < 100; separate from
+        `run.seed` so seed replicates are scored on the same rows.
       gen_per: Decoders: evaluation rows per dataset also answered in
         unguided text mode (validity of the generated "k]").
     """
@@ -180,7 +182,8 @@ class EncoderModelConfig:
       pack_tokens: Tokens per packed forward pass (varlen).
       pack_train: Training also packs (varlen): a process's rows of a batch
         go through in packs of up to `pack_tokens`, not one row per forward
-        pass. The loss is the same sum over rows.
+        pass (about 4x faster). The loss is the same sum over rows. Without
+        varlen (e.g. sdpa) training runs one row per forward pass.
       gradient_checkpointing: Recompute activations in the backward pass.
     """
 
@@ -188,7 +191,7 @@ class EncoderModelConfig:
     revision: str | None = None
     attention: str = VARLEN
     pack_tokens: int = 32768
-    pack_train: bool = False
+    pack_train: bool = True
     gradient_checkpointing: bool = True
 
 
@@ -405,8 +408,8 @@ class EvidenceDataConfig:
       eval_per: Evaluation rows with gold spans per dataset (0: all).
       eval_seed: Picks the evaluation rows.
       eval_part: Report on this part ("dev" / "test") of the held-out split.
-      tune_part: Tune the word threshold on this part (None: on held-out
-        rows with gold spans that are not report rows).
+      tune_part: "dev": tune the word threshold on every dev row with gold
+        evidence (None: on those that are not report rows). Never test.
     """
 
     source: str = DEFAULT_DATA
@@ -420,7 +423,7 @@ class EvidenceDataConfig:
     eval_per: int = 50
     eval_seed: int = 0
     eval_part: Literal["dev", "test"] | None = None
-    tune_part: Literal["dev", "test"] | None = None
+    tune_part: Literal["dev"] | None = None
 
 
 @dataclasses.dataclass
@@ -668,7 +671,8 @@ def merge(
     if path is not None:
         layers.append(OmegaConf.load(path))
     layers.append(OmegaConf.from_dotlist(list(overrides)))
-    return OmegaConf.merge(*layers)
+    # Merging onto a structured (dataclass) config always gives a DictConfig.
+    return cast(DictConfig, OmegaConf.merge(*layers))
 
 
 def load(
@@ -682,7 +686,7 @@ def load(
       omegaconf.errors.OmegaConfBaseException: As `merge`, or on a missing
         required value.
     """
-    return OmegaConf.to_object(merge(schema, path, overrides))  # type: ignore[return-value]
+    return cast(T, OmegaConf.to_object(merge(schema, path, overrides)))
 
 
 def save(cfg: DictConfig, path: str | pathlib.Path) -> None:
@@ -710,4 +714,4 @@ def from_command_line(
     )
     args = parser.parse_args(argv)
     raw = merge(schema, args.config, args.overrides)
-    return OmegaConf.to_object(raw), raw  # type: ignore[return-value]
+    return cast(T, OmegaConf.to_object(raw)), raw

@@ -48,3 +48,19 @@ def test_predict_record(example) -> None:
     line = predict.record(example, 0, 0.9)
     assert line["correct"] and line["option"] == "Blue"
     json.dumps(line)
+
+
+def test_encoder_with_an_adapter_is_rejected() -> None:
+    from decision_models import models
+
+    ref = config.ModelRef(kind="encoder", path="runs/x", adapter="runs/a")
+    with pytest.raises(ValueError, match="no adapter"):
+        models.load(ref, "cpu")
+
+
+def test_merged_model_with_an_adapter_is_rejected(tmp_path) -> None:
+    from decision_models.models import decoder
+
+    (tmp_path / decoder.MERGED_MARKER).write_text("{}")
+    with pytest.raises(ValueError, match="already has an adapter"):
+        decoder.TrieDecoder.for_inference(str(tmp_path), "runs/a", "cpu")

@@ -40,6 +40,7 @@ from decision_models.evidence import sentences as sentences_lib
 from decision_models.models import base
 
 TOP_K = (1, 3, 5)
+MIN_LDS_MASKS = 8  # Fewer unseen held-out masks: LDS is NaN for the row.
 METRICS = (
     "ap",
     "top1",
@@ -60,6 +61,7 @@ def weight_metrics(
     targets: Callable[[np.ndarray], np.ndarray],
     lds_masks: int = 32,
     seed: int = 1_000_000,
+    seen: np.ndarray | None = None,
 ) -> dict[str, dict[str, float]]:
     """Span metrics, LDS and drop@k of each named sentence weighting.
 
@@ -72,12 +74,15 @@ def weight_metrics(
       weights: Method name -> one weight per sentence.
       targets: keep masks [n, S] -> logit q(answer) [n] under them.
       lds_masks: Held-out random ablations for the LDS.
-      seed: Seeds them (unseen by any surrogate).
+      seed: Seeds them.
+      seen: Masks a surrogate was fit on, never used as held-out masks. A row
+        with fewer than MIN_LDS_MASKS unseen masks gets LDS NaN (skipped in
+        the summary).
     """
     from scipy.stats import spearmanr
 
     n = len(sentences)
-    held = sentences_lib.ablation_masks(lds_masks, n, seed=seed)  # [L, S]
+    held = sentences_lib.held_out_masks(lds_masks, n, seen, seed=seed)
     ks = [k for k in TOP_K if k < n]
     keep: list[np.ndarray] = [np.ones(n, bool), *held]
     where: dict[tuple[str, int], int] = {}
@@ -91,14 +96,16 @@ def weight_metrics(
     y = targets(np.stack(keep))
     out: dict[str, dict[str, float]] = {}
     for name, w in weights.items():
-        lds = (
-            spearmanr(held @ w, y[1 : 1 + len(held)]).statistic
-            if w.std() > 0
-            else 0.0
-        )
+        if len(held) < MIN_LDS_MASKS:
+            lds = float("nan")
+        elif w.std() > 0:
+            lds = spearmanr(held @ w, y[1 : 1 + len(held)]).statistic
+        else:
+            lds = 0.0
         out[name] = {
             **(metrics.span_metrics(row, sentences, w) or {}),
             "lds": float(lds),
+            "lds_masks": len(held),
             **{f"drop@{k}": float(y[0] - y[where[name, k]]) for k in ks},
         }
     return out
@@ -123,7 +130,13 @@ def evaluate_row(
         )
 
     scores = weight_metrics(
-        row, result.sentences, {"w": result.weights}, targets, lds_masks, seed
+        row,
+        result.sentences,
+        {"w": result.weights},
+        targets,
+        lds_masks,
+        seed,
+        result.masks,
     )["w"]
     return {
         "id": row.id,
@@ -200,7 +213,7 @@ def main() -> None:
     model = models.load(cfg.model)
     cite.prepare(model, cfg.citation)
     rows = load_rows(cfg)
-    if rows and cfg.citation.fuse:
+    if rows and cfg.citation.fuse and cite.packed(model, cfg.citation):
         cite.cite(model, rows[0], cfg.citation)  # Compiles outside the timings.
     out = pathlib.Path(cfg.out)
     out.mkdir(parents=True, exist_ok=True)

@@ -109,19 +109,38 @@ class Trained:
     threshold: float
 
 
-def load(run: str | pathlib.Path, model: encoder.MaskedEncoder) -> Trained:
+# Evaluation tags of a run (train.py writes config<tag>.yaml and
+# threshold<tag>.json), in the order `load` prefers them: first the recipe's
+# (reported on test, tuned on dev), the one scripts/release_encoders.py ships.
+TAGS = ("_test", "", "_dev")
+
+
+def load(
+    run: str | pathlib.Path,
+    model: encoder.MaskedEncoder,
+    tag: str | None = None,
+) -> Trained:
     """The head of a `decision-models-train-evidence` run, in eval mode.
 
-    The threshold is threshold*.json's (0.5 when the run has none).
+    Args:
+      run: The run directory.
+      model: The encoder the head reads.
+      tag: Which evaluation's threshold<tag>.json to use ("_test", "" or
+        "_dev"; default: the first of TAGS the run has). 0.5 if none.
     """
     run = pathlib.Path(run)
-    cfg = config.load(config.EvidenceConfig, next(run.glob("config*.yaml")))
+    tags = [tag] if tag is not None else TAGS
+    found = next(
+        (t for t in tags if (run / f"threshold{t}.json").exists()), None
+    )
+    configs = [run / f"config{t}.yaml" for t in (found, *TAGS) if t is not None]
+    cfg_file = next(f for f in configs if f.exists())
+    cfg = config.load(config.EvidenceConfig, cfg_file)
     head = build(model, cfg.head)
     head.load_state_dict(torch.load(run / "head.pt", map_location=model.device))
-    thresholds = sorted(run.glob("threshold*.json"))
     threshold = (
-        json.loads(thresholds[0].read_text())["threshold"]
-        if thresholds
+        json.loads((run / f"threshold{found}.json").read_text())["threshold"]
+        if found is not None
         else 0.5
     )
     return Trained(head.eval(), threshold)

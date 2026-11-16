@@ -140,8 +140,16 @@ def macro_average(
     """The mean over datasets of each metric every dataset has ("ALL").
 
     Row counts ("rows", "gen_rows") are not averaged; NaNs are skipped.
+
+    Raises:
+      ValueError: If there are no datasets (no rows were selected).
     """
     rows = list(per_source.values())
+    if not rows:
+        raise ValueError(
+            "no rows to evaluate: check rows.source, rows.part, rows.datasets "
+            "and rows_file"
+        )
     keys = [
         k
         for k in rows[0]
@@ -304,6 +312,12 @@ def main() -> None:
     rows = sampling.select(
         cfg.rows, None if ids is None else lambda r: r.id in ids
     )
+    if not rows:
+        raise SystemExit(
+            f"no rows selected from {cfg.rows.source} ({cfg.rows.split}, part "
+            f"{cfg.rows.part}, datasets {cfg.rows.datasets}, rows_file "
+            f"{cfg.rows_file})"
+        )
     gen_ids = {
         r.id for r in sampling.per_dataset(rows, cfg.gen_per, cfg.rows.seed)
     }

@@ -14,7 +14,9 @@ from collections.abc import Sequence
 import dataclasses
 import pathlib
 import random
+from typing import TYPE_CHECKING
 from typing import Any
+from typing import cast
 
 import torch
 from torch import nn
@@ -25,6 +27,9 @@ from decision_models.data import schema
 from decision_models.losses import option
 from decision_models.models import base
 from decision_models.models import flash_attention
+
+if TYPE_CHECKING:
+    from transformers import PreTrainedModel
 
 CharRange = tuple[int, int, int]  # (part, start, end) in that part's text.
 
@@ -190,13 +195,15 @@ def _fp32(module: nn.Module, x: torch.Tensor) -> torch.Tensor:
         return torch.func.functional_call(module, params, (x.float(),))
 
 
-def mask_logits(model: nn.Module, hidden: torch.Tensor) -> torch.Tensor:
+def mask_logits(model: "PreTrainedModel", hidden: torch.Tensor) -> torch.Tensor:
     """Vocabulary logits [K, V] in fp32 from final hidden states [K, d].
 
     The head runs in fp32: MLM logits here are ~200 in size, where bf16
     steps by 1-2, which ties options and can change the argmax.
     """
-    return _fp32(model.decoder, _fp32(model.head, hidden))
+    # HF submodules: torch types Module.__getattr__ as Tensor | Module.
+    head, decoder = model.head, model.decoder
+    return _fp32(decoder, _fp32(head, hidden))  # ty: ignore[invalid-argument-type]
 
 
 class Scorer(nn.Module):
@@ -206,7 +213,9 @@ class Scorer(nn.Module):
     keeps DDP's gradient sync and mixed-precision autocast.
     """
 
-    def __init__(self, model: nn.Module, yes: int, no: int | None) -> None:
+    def __init__(
+        self, model: "PreTrainedModel", yes: int, no: int | None
+    ) -> None:
         super().__init__()
         self.model = model
         self.yes = yes
@@ -241,7 +250,7 @@ def load_mlm(
     revision: str | None = None,
     attention: str = "sdpa",
     dtype: torch.dtype = torch.bfloat16,
-) -> nn.Module:
+) -> "PreTrainedModel":
     """The encoder with its MLM head, on the CPU in eval mode.
 
     Raises:
@@ -292,7 +301,7 @@ class MaskedEncoder(base.DecisionModel):
         fmt: config.FormatConfig,
         loss_kind: config.Loss = "listwise",
         pack_tokens: int = 32768,
-        pack_train: bool = False,
+        pack_train: bool = True,
     ) -> None:
         super().__init__(network, tokenizer, device)
         self.fmt = fmt
@@ -365,6 +374,11 @@ class MaskedEncoder(base.DecisionModel):
         )
         encoder.eval()
         return encoder
+
+    @property
+    def unwrapped(self) -> Scorer:
+        """The Scorer without its DDP / compile wrappers."""
+        return cast(Scorer, super().unwrapped)
 
     @property
     def is_packed(self) -> bool:

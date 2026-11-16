@@ -11,9 +11,12 @@ from collections.abc import Sequence
 import copy
 import dataclasses
 import functools
+import operator
 import pathlib
 import random
+from typing import TYPE_CHECKING
 from typing import Any
+from typing import cast
 
 import torch
 from torch import nn
@@ -23,11 +26,18 @@ from decision_models.data import prompts
 from decision_models.data import schema
 from decision_models.models import base
 
+if TYPE_CHECKING:
+    from peft import PeftModel
+    from transformers import PreTrainedModel
+    from transformers._typing import GenerativePreTrainedModel
+
 ANSWER_PREFIX = "Best answer: ["
 # The assistant turn up to the answer, as the Qwen3 chat template renders it
 # with thinking off.
 _TAIL = "<|im_start|>assistant\n<think>\n\n</think>\n\n" + ANSWER_PREFIX
 OFF_PATH = 3  # Off-gold-path trie nodes sampled per training row (App. I).
+# Written by decision-models-merge next to merged weights: base + adapter.
+MERGED_MARKER = "merged_adapter.json"
 
 Trie = dict[tuple[int, ...], list[int]]
 
@@ -188,7 +198,12 @@ def read_trie(
 ) -> torch.Tensor:
     """S [K] from each trie node's log-probabilities logp[node] [V] (Eq. 1)."""
     return torch.stack(
-        [sum(logp[tuple(x[:t])][x[t]] for t in range(len(x))) for x in suffixes]
+        [
+            functools.reduce(
+                operator.add, (logp[tuple(x[:t])][x[t]] for t in range(len(x)))
+            )
+            for x in suffixes
+        ]
     )
 
 
@@ -256,7 +271,7 @@ def score_batch(
         logits_to_keep=1,
     )
     root = torch.log_softmax(out.logits[:, -1].float(), -1)  # [B, V]
-    logp = [{(): lp} for lp in root]
+    logp: list[dict[tuple[int, ...], torch.Tensor]] = [{(): lp} for lp in root]
     tries = [candidates(tokenizer, k) for k in ks]
     depths: dict[int, list[tuple[int, tuple[int, ...]]]] = {}
     for i, (_, nodes) in enumerate(tries):
@@ -343,7 +358,9 @@ def score_tree(
         use_cache=True,
         logits_to_keep=1,
     )
-    logp = {(): torch.log_softmax(out.logits[0, -1].float(), -1)}
+    logp: dict[tuple[int, ...], torch.Tensor] = {
+        (): torch.log_softmax(out.logits[0, -1].float(), -1)
+    }
     inner, tree = _tree_mask(tokenizer, k)
     if inner:
         q = len(inner)
@@ -363,7 +380,7 @@ def score_tree(
     return read_trie(logp, suffixes, nodes)
 
 
-def fuse(model: nn.Module) -> None:
+def fuse(model: "PreTrainedModel | PeftModel") -> None:
     """Compiles each decoder layer (dynamic shapes) so its elementwise ops fuse.
 
     Eager RMSNorm, RoPE, SwiGLU and residual adds are about half of a packed
@@ -372,7 +389,7 @@ def fuse(model: nn.Module) -> None:
     by no more than eager's own error against fp32. The first call compiles.
     """
     base_model = getattr(model, "model", model)
-    for layer in base_model.layers:
+    for layer in cast(nn.ModuleList, base_model.layers):
         layer.compile(dynamic=True)
 
 
@@ -413,7 +430,9 @@ def batched_logits(
 # ---------------------------------------------------------------------------
 
 
-def load_base(model_id: str, dtype: torch.dtype = torch.bfloat16) -> nn.Module:
+def load_base(
+    model_id: str, dtype: torch.dtype = torch.bfloat16
+) -> "PreTrainedModel":
     """The base LLM on the CPU (Qwen3.5 uses its multimodal class).
 
     Args:
@@ -433,7 +452,7 @@ def load_base(model_id: str, dtype: torch.dtype = torch.bfloat16) -> nn.Module:
     )
 
 
-def add_lora(model: nn.Module, rank: int = 16) -> nn.Module:
+def add_lora(model: "PreTrainedModel", rank: int = 16) -> "PeftModel":
     """A fresh LoRA adapter on the decoder layers' linear modules."""
     import peft
 
@@ -483,6 +502,11 @@ class TrieDecoder(base.DecisionModel):
         self.objective = objective or config.TrieObjectiveConfig()
         self.reference = reference
 
+    @property
+    def unwrapped(self) -> "PreTrainedModel | PeftModel":
+        """The causal LM (with its LoRA adapter when training LoRA)."""
+        return cast("PreTrainedModel | PeftModel", super().unwrapped)
+
     @classmethod
     def for_training(
         cls, cfg: config.DecoderTrainConfig, device: torch.device
@@ -525,10 +549,20 @@ class TrieDecoder(base.DecisionModel):
           adapter: A saved LoRA adapter on top of `path`.
           device: Where to put it (default: base.default_device()).
           merge: Merge the adapter into the weights.
+
+        Raises:
+          ValueError: If `path` already has an adapter merged in (written by
+            decision-models-merge) and `adapter` is given again.
         """
         import peft
         import transformers
 
+        marker = pathlib.Path(path) / MERGED_MARKER
+        if adapter is not None and marker.exists():
+            raise ValueError(
+                f"{path} already has an adapter merged in ({marker}); drop "
+                f"adapter={adapter} or load the base model"
+            )
         device = device or base.default_device()
         tokenizer = transformers.AutoTokenizer.from_pretrained(path)
         network = load_base(path).to(device)
@@ -604,7 +638,9 @@ class TrieDecoder(base.DecisionModel):
         k = len(example.options)
         longest = max(map(len, candidates(tok, k)[0]))
         stop = [tok.convert_tokens_to_ids("<|im_end|>"), tok.eos_token_id]
-        ids = self.unwrapped.generate(
+        # Causal LMs generate (GenerationMixin); PreTrainedModel does not.
+        lm = cast("GenerativePreTrainedModel", self.unwrapped)
+        ids = lm.generate(
             torch.tensor([prompt], device=self.device),
             max_new_tokens=longest,
             do_sample=False,

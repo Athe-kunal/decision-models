@@ -38,7 +38,11 @@ def _naive_scores(model, prompt, suffixes) -> torch.Tensor:
     for s in suffixes:
         ids = torch.tensor([prompt + s])
         logp = torch.log_softmax(model(input_ids=ids).logits[0].float(), -1)
-        out.append(sum(logp[len(prompt) - 1 + t, x] for t, x in enumerate(s)))
+        out.append(
+            torch.stack(
+                [logp[len(prompt) - 1 + t, x] for t, x in enumerate(s)]
+            ).sum()
+        )
     return torch.stack(out)
 
 

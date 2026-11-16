@@ -366,17 +366,25 @@ def _snapshot(name: str) -> pathlib.Path:
     from huggingface_hub import snapshot_download  # pylint: disable=C0415
 
     source = _source(name)
-    kwargs = dict(
-        repo_id=source["repo"],
-        repo_type="dataset",
-        revision=source["revision"],
-        allow_patterns=source["files"],
-    )
+    if source is None:
+        raise KeyError(f"{name} is not a pinned dataset")
+
+    def fetch(local_files_only: bool) -> pathlib.Path:
+        return pathlib.Path(
+            snapshot_download(
+                repo_id=source["repo"],
+                repo_type="dataset",
+                revision=source["revision"],
+                allow_patterns=source["files"],
+                local_files_only=local_files_only,
+            )
+        )
+
     try:
-        return pathlib.Path(snapshot_download(local_files_only=True, **kwargs))
+        return fetch(local_files_only=True)
     except Exception:  # pylint: disable=broad-except
         # Not in the cache yet (a missing file raises a Hub error).
-        return pathlib.Path(snapshot_download(**kwargs))
+        return fetch(local_files_only=False)
 
 
 def local_path(name: str, filename: str) -> pathlib.Path:

@@ -30,7 +30,7 @@ spans = ["openai>=1.50"]  # decision_models.evidence.spans (vLLM server, OpenAI 
 serve = ["fastapi>=0.115", "uvicorn>=0.30"]  # decision_models.inference.server
 profile = ["matplotlib"]  # decision_models.profiling (memory timeline HTML)
 blog = ["fastapi>=0.115", "uvicorn>=0.30"]  # blogs/ export scripts
-dev = ["pytest", "ruff"]
+dev = ["pytest", "ruff", "ty==0.0.104"]
 
 [project.scripts]
 decision-models-build-data = "decision_models.data.build:main"
@@ -88,6 +88,19 @@ convention = "google"
 force-single-line = true
 force-sort-within-sections = true
 
+
+# Type checking: `make lint` runs `ty check`. TensorDict's lookups are typed as
+# unions ty cannot narrow, so ty reads tensordict as untyped (Any) rather than
+# the loss code changing for it.
+[tool.ty.environment]
+python-version = "3.11"
+root = ["src", "."]
+
+[tool.ty.src]
+include = ["src", "tests", "analysis"]
+
+[tool.ty.analysis]
+replace-imports-with-any = ["tensordict", "tensordict.**"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

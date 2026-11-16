@@ -10,6 +10,8 @@ trie nodes, S sequences, K anchored top tokens.
 from collections.abc import Sequence
 import contextlib
 import math
+from typing import TYPE_CHECKING
+from typing import cast
 
 from tensordict import TensorDict
 import torch
@@ -17,6 +19,9 @@ from torch import nn
 from torch.profiler import record_function
 
 from decision_models.models import decoder
+
+if TYPE_CHECKING:
+    from peft import PeftModel
 
 # Anchors keep the reference's top TOP tokens plus one bucket for the rest
 # (App. I).
@@ -238,7 +243,9 @@ def compute(
     if reference is not None:
         p0_model, p0_context = reference, contextlib.nullcontext()
     else:
-        p0_model, p0_context = peft_model, peft_model.disable_adapter()
+        # No reference model: LoRA, whose p0 is the adapter disabled.
+        lora = cast("PeftModel", peft_model)
+        p0_model, p0_context = lora, lora.disable_adapter()
     with record_function("p0_forward"), torch.no_grad(), p0_context:
         ref = _logits(p0_model, ex, seqs, device, pad)
     n_path, n_off = len(ex.path), len(ex.off_path)

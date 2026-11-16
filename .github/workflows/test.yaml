@@ -1,0 +1,39 @@
+name: Test
+
+# The CPU test suite: tiny random models and tokenizers, no GPU, no Hub models.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: test-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      CUDA_VISIBLE_DEVICES: ""
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.9.4"
+          enable-cache: true
+
+      - name: Install
+        run: uv sync --frozen --extra dev --extra serve
+
+      # Sentence splitting (evidence, ContextCite tests) needs NLTK's punkt_tab.
+      - name: NLTK data
+        run: uv run --no-sync python -m nltk.downloader -q punkt_tab
+
+      - name: pytest
+        run: uv run --no-sync pytest -q

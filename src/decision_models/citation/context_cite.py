@@ -31,6 +31,8 @@ class Attribution:
       sentences: The row's sentences.
       weights: One weight per sentence; higher = more support.
       bias: The surrogate's intercept (ContextCite only).
+      masks: The keep masks the surrogate was fit on [n, S] (ContextCite
+        only), so held-out evaluations can avoid them.
     """
 
     answer: int
@@ -38,6 +40,7 @@ class Attribution:
     sentences: list[sentences_lib.Sentence]
     weights: np.ndarray
     bias: float = 0.0
+    masks: np.ndarray | None = None
 
 
 def ablation_count(num_sentences: int, low: int = 32, high: int = 256) -> int:
@@ -112,8 +115,11 @@ def fit_surrogate(
     scaler = StandardScaler()
     lasso = Lasso(alpha=alpha, random_state=0, fit_intercept=True)
     make_pipeline(scaler, lasso).fit(masks.astype(np.float32), y)
-    weight = lasso.coef_ / scaler.scale_
-    bias = lasso.intercept_ - (scaler.mean_ / scaler.scale_) @ lasso.coef_.T
+    scale, mean = scaler.scale_, scaler.mean_
+    if scale is None or mean is None:  # Only without with_std / with_mean.
+        raise RuntimeError("StandardScaler fitted without scale_ or mean_")
+    weight = lasso.coef_ / scale
+    bias = lasso.intercept_ - (mean / scale) @ lasso.coef_.T
     return weight, float(bias)
 
 
@@ -150,7 +156,7 @@ def attribute_with(
         return Attribution(answer, q, [], np.zeros(0))
     y = np.array([logit_q(s, answer) for s in scores[1:]])
     weights, bias = fit_surrogate(keep[1:], y, alpha)
-    return Attribution(answer, q, sentences, weights, bias)
+    return Attribution(answer, q, sentences, weights, bias, keep[1:])
 
 
 def attribute(
