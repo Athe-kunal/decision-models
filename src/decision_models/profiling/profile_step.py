@@ -1,6 +1,6 @@
 """Profiles training steps on one GPU: profiler traces, CUDA memory snapshots.
 
-Usage (see `make torch-profiler` and docs/profiling.md, which explains
+Usage (see `make torch-profiler` which explains
 every output):
   python -m decision_models.profiling.profile_step model=Qwen/Qwen3-0.6B \
       out=runs/profile/Qwen3-0.6B

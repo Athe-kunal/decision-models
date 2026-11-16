@@ -19,10 +19,14 @@ MKDOCS := uvx --with mkdocs-material==9.5.49 mkdocs
 # make torch-profiler: the profiled model and where its outputs go
 PROFILE_MODEL ?= Qwen/Qwen3-0.6B
 PROFILE_OUT ?= runs/profile/$(notdir $(PROFILE_MODEL))
+# make docker-build / docker-run: encoder, decoder or qwen35 (docker/Dockerfile)
+TARGET ?= encoder
+DOCKER_ARGS ?=
+HF_CACHE ?= $(or $(HF_HOME),$(HOME)/.cache/huggingface)
 
 .PHONY: help install download data train-decoder train-encoder evaluate benchmarks evidence \
 	predict serve sglang-install sglang-merge sglang-serve sglang-stop torch-profiler blog docs \
-	test lint format
+	docker-build docker-run test lint format
 
 help:
 	@echo "make install         uv sync (CUDA 12.8 torch) with the dev extra"
@@ -38,9 +42,11 @@ help:
 	@echo "make sglang-merge    merge ADAPTER into BASE -> MERGED (CPU)"
 	@echo "make sglang-serve    serve MERGED with SGLang on GPUS (http://127.0.0.1:PORT), merging first if needed"
 	@echo "make sglang-stop     stop the server on PORT"
-	@echo "make torch-profiler  profile training steps of PROFILE_MODEL -> PROFILE_OUT (docs/profiling.md)"
+	@echo "make torch-profiler  profile training steps of PROFILE_MODEL -> PROFILE_OUT"
 	@echo "make blog            serve blogs/ at http://127.0.0.1:$(BLOG_PORT)/ (Ctrl-C to stop)"
 	@echo "make docs            serve the docs site (mkdocs.yml) at http://127.0.0.1:$(DOCS_PORT)/"
+	@echo "make docker-build  TARGET=encoder|decoder|qwen35 -> image decision-models:TARGET (docs/docker.md)"
+	@echo "make docker-run    TARGET=... shell with all GPUs, HF cache and runs/ mounted"
 	@echo "make test / lint / format"
 
 install:
@@ -105,6 +111,17 @@ blog:
 
 docs:
 	$(MKDOCS) serve --dev-addr 127.0.0.1:$(DOCS_PORT)
+
+docker-build:
+	docker build -f docker/Dockerfile --target $(TARGET) -t decision-models:$(TARGET) $(DOCKER_ARGS) .
+
+docker-run:
+	mkdir -p runs $(HF_CACHE)
+	docker run --rm -it --gpus all --ipc=host --shm-size=32g \
+		--ulimit memlock=-1 --ulimit stack=67108864 \
+		-v $(HF_CACHE):/root/.cache/huggingface \
+		-v $(CURDIR)/runs:/root/decision-models/runs \
+		$(DOCKER_ARGS) decision-models:$(TARGET)
 
 test:
 	$(PY) -m pytest -q

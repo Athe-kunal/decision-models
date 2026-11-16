@@ -33,6 +33,8 @@ uv sync --extra dev                  # + --extra serve (local server), spans, pr
 
 Python 3.11+, a CUDA GPU for training. FlashAttention-2 is fetched from the Hugging Face Hub on first use.
 
+Or in Docker ([guide](docs/docker.md)): `make docker-build TARGET=encoder` (or `decoder`, `qwen35`), then `make docker-run TARGET=encoder`.
+
 ## Quickstart
 
 ```bash
@@ -60,8 +62,7 @@ Every command takes `--config file.yaml` plus `key=value` overrides, checked aga
 - [Training](docs/training.md): encoder recipes, decoder (LoRA / full), evaluation
 - [Inference](docs/inference.md): predict, local server, SGLang, LoRA merge
 - [Citations and evidence](docs/citation.md): ContextCite (one-pass for decoders), the evidence head, span labels
-- [Profiling](docs/profiling.md): torch.profiler traces and CUDA memory of a training step
-- [Analyses](docs/analysis.md): latency, option coupling, AT2 (outside the package)
+- [Docker](docs/docker.md): images for encoder, decoder and Qwen3.5 training, GPU generations
 
 ## Commands
 

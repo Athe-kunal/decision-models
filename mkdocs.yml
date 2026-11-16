@@ -36,6 +36,5 @@ nav:
       - Training: training.md
       - Inference: inference.md
       - Citations and evidence: citation.md
-      - Profiling: profiling.md
-      - Analyses: analysis.md
+      - Docker: docker.md
   - Blog: https://athe-kunal.github.io/decision-models/blog/

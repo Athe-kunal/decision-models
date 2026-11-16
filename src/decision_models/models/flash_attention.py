@@ -26,6 +26,7 @@ import dataclasses
 import functools
 import importlib.util
 import pathlib
+import platform
 import sys
 from types import ModuleType
 from typing import Any
@@ -45,14 +46,23 @@ def kernel() -> ModuleType:
     """The FA2 module for this torch / CUDA build, from the Hub snapshot.
 
     Raises:
+      RuntimeError: On a GPU older than Ampere (FA2 needs sm_80+).
       FileNotFoundError: If the Hub repo has no build for this torch / CUDA
-        version.
+        version and CPU architecture.
     """
     from huggingface_hub import snapshot_download
 
+    cuda_ok = torch.cuda.is_available()
+    if cuda_ok and torch.cuda.get_device_capability() < (8, 0):
+        name = torch.cuda.get_device_name()
+        raise RuntimeError(
+            f"FlashAttention-2 needs an Ampere or newer GPU (sm_80+), not "
+            f"{name}; use attention=sdpa"
+        )
     major, minor = torch.__version__.split(".")[:2]
     cuda = torch.version.cuda.replace(".", "")
-    build = f"build/torch{major}{minor}-cxx11-cu{cuda}-x86_64-linux"
+    arch = platform.machine()  # x86_64 or aarch64 (Grace Hopper / Blackwell)
+    build = f"build/torch{major}{minor}-cxx11-cu{cuda}-{arch}-linux"
     root = snapshot_download(
         _KERNEL_REPO, revision=_KERNEL_REVISION, allow_patterns=[build + "/*"]
     )
