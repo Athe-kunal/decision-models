@@ -147,7 +147,7 @@ Write an adapter that yields `adapter.Record(documents, question, options, answe
 | `documents` | str | the input text; `""` if the question stands alone |
 | `question` | str | what to decide |
 | `options` | list of str, or a name in `Record.option_sets` | `adapter.YES_NO` is shown as `Yes` / `No` |
-| `answer` | int or str | the correct option's 0-based index, or its text (case-insensitive); not a bool |
+| `answer` | int or str | the correct option's 0-based index, or its text (case and outer spaces ignored); not a bool |
 
 ```python
 import json
@@ -156,7 +156,10 @@ from decision_models.data import adapter
 def my_adapter(path):
     for line in open(path):
         r = json.loads(line)
-        yield adapter.Record(r["context"], r["question"], adapter.YES_NO, r["label"])
+        label = r["label"]                      # "yes" / "no"; map booleans first:
+        if isinstance(label, bool):
+            label = "yes" if label else "no"
+        yield adapter.Record(r["context"], r["question"], adapter.YES_NO, label)
 
 adapter.save(
     {"train": my_adapter("train.jsonl"), "eval": my_adapter("dev.jsonl")},
@@ -164,15 +167,38 @@ adapter.save(
 )
 ```
 
-Then train with `data.source=mine` (or evaluate with `rows.source=mine`). An answer that names no option raises `ValueError`; an unknown option-set name, `KeyError`.
+Then train with `data.source=mine` (or evaluate with `rows.source=mine`). Training needs both `train` and `eval`.
+
+`save` keeps the first copy of a repeated row (same documents, question and options) and of a group already in an earlier split, and logs a warning naming each dropped id. It raises `ValueError` when an answer names no option or several (`["A", "a"]`: give the index) or a split ends up empty, and `KeyError` (listing the known names) for an unknown option set.
+
+**Dev and test.** Of the `eval` rows, 100 per `source` (a fixed seeded sample) are the dev part: training reports on them and settings are tuned on them. The rest are the test part, for the final numbers (`rows.part=test`). With 100 or fewer eval rows there is no test part; give `eval` more rows, or keep a separate test file and evaluate it under another name.
 
 Saved datasets live outside the workspace, in `$LLM_JEV_DATA/splits/<source>` (default: `$HF_HOME/decision_models/splits/<source>`, i.e. `~/.cache/huggingface/decision_models/splits/mine`), next to the downloaded sources. Set `LLM_JEV_DATA` to move the cache, much like `HF_HOME` / `HF_DATASETS_CACHE`, or pass `out=` to write somewhere specific (then `data.source=<out>`). `data.source` is looked up as a path first, then as a name in this cache, then as a Hugging Face dataset id.
 
-To see what a model is trained on, `adapter.collate(records, model)` returns the encodings of a `MaskedEncoder` or a `TrieDecoder`, the same ones training uses (pass `rng` to shuffle options as training does).
+To see what a model is trained on, `adapter.collate(records, model)` returns the encodings of a `MaskedEncoder` or a `TrieDecoder`, as training builds them (pass `rng` to shuffle options; training seeds each row separately, so its orders differ). `model.tokenizer.decode(encoding.input_ids)` shows the prompt; it always opens with `State:`, then the documents, the question and the numbered options.
 
 To extend it:
 
-- **More fields** (several documents, evidence spans, metadata): subclass `Record` and override `to_example(source)`, or yield `schema.Example`s; `save` and `collate` accept both.
+- **More fields** (several documents, evidence spans, metadata): subclass `Record`, call `super().to_example(source)` and replace what you add, or yield `schema.Example`s; `save` and `collate` accept both. Evidence spans, as character offsets into `documents`:
+
+  ```python
+  import dataclasses, types
+  from decision_models.data import adapter, schema
+
+  @dataclasses.dataclass(frozen=True)
+  class WithEvidence(adapter.Record):
+      evidence: str = ""  # a quote from documents
+
+      def to_example(self, source):
+          example = super().to_example(source)
+          start = self.documents.find(self.evidence)
+          if not self.evidence or start < 0:
+              return example
+          span = schema.Span(0, start, start + len(self.evidence))
+          return dataclasses.replace(example, spans=(span,))
+  ```
+
+  Several documents: build `parts=(schema.Part("Contract", a), schema.Part("Email", b))` the same way.
 - **Another named option set**: subclass `Record` and extend `option_sets`:
 
   ```python
