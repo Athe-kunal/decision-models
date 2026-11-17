@@ -164,7 +164,7 @@ adapter.save(
 )
 ```
 
-Then train with `data.source=mine` (or evaluate with `rows.source=mine`). An invalid record raises `ValueError`.
+Then train with `data.source=mine` (or evaluate with `rows.source=mine`). An answer that names no option raises `ValueError`; an unknown option-set name, `KeyError`.
 
 Saved datasets live outside the workspace, in `$LLM_JEV_DATA/splits/<source>` (default: `$HF_HOME/decision_models/splits/<source>`, i.e. `~/.cache/huggingface/decision_models/splits/mine`), next to the downloaded sources. Set `LLM_JEV_DATA` to move the cache, much like `HF_HOME` / `HF_DATASETS_CACHE`, or pass `out=` to write somewhere specific (then `data.source=<out>`). `data.source` is looked up as a path first, then as a name in this cache, then as a Hugging Face dataset id.
 

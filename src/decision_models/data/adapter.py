@@ -27,18 +27,13 @@ YES_NO = "yes/no"
 
 @dataclasses.dataclass(frozen=True)
 class Record:
-    """One decision.
-
-    Subclass to add fields (override `to_example`) or named option sets
-    (override `option_sets`).
+    """One decision; subclass to add fields or `option_sets`.
 
     Attributes:
       documents: The input text ("" if the question stands alone).
       question: What to decide.
       options: A name in `option_sets` (e.g. `YES_NO`) or at least two texts.
-      answer: The correct option: its 0-based index or its text
-        (case-insensitive).
-      option_sets: Named option sets `options` may give instead of texts.
+      answer: The correct option's 0-based index or text (case-insensitive).
     """
 
     option_sets: ClassVar[Mapping[str, tuple[str, ...]]] = (
@@ -50,118 +45,71 @@ class Record:
     options: str | Sequence[str]
     answer: int | str
 
-    def option_texts(self) -> tuple[str, ...]:
-        """The options as shown.
-
-        Raises:
-          ValueError: If `options` names no option set.
-        """
-        if not isinstance(self.options, str):
-            return tuple(self.options)
-        if self.options not in self.option_sets:
-            raise ValueError(
-                f"options {self.options!r} is not one of "
-                f"{sorted(self.option_sets)}"
-            )
-        return self.option_sets[self.options]
-
     def to_example(self, source: str) -> schema.Example:
-        """The record as a validated `Example`.
-
-        Args:
-          source: The dataset name, also the prefix of the id and group.
+        """The record as a validated `Example` of dataset `source`.
 
         Raises:
-          ValueError: If the options or the answer are invalid.
+          KeyError: If `options` names no option set.
+          ValueError: If the answer names no option.
         """
-        options = self.option_texts()
-        key = base.stable_hash(self.documents, self.question, *options)
-        parts = (
-            (schema.Part("Document", self.documents),) if self.documents else ()
+        options = (
+            self.option_sets[self.options]
+            if isinstance(self.options, str)
+            else tuple(self.options)
         )
+        folded = [o.casefold() for o in options]
+        answer = self.answer
+        if isinstance(answer, bool) or (
+            isinstance(answer, str) and answer.casefold() not in folded
+        ):
+            raise ValueError(f"answer {answer!r} is not one of {options}")
+        key = base.stable_hash(self.documents, self.question, *options)
         return schema.Example(
             id=f"{source}:{key}",
             source=source,
-            parts=parts,
+            parts=(schema.Part("Document", self.documents),)
+            if self.documents
+            else (),
             question=self.question,
             options=options,
-            gold=_gold_index(self.answer, options),
+            gold=folded.index(answer.casefold())
+            if isinstance(answer, str)
+            else answer,
             group=f"{source}:{key}",
         )
 
 
-Row = Record | schema.Example
-
-
-def _gold_index(answer: int | str, options: Sequence[str]) -> int:
-    """The index of `answer` (an index or a case-insensitive option text)."""
-    if isinstance(answer, bool):  # A bool is an int: True would mean "No".
-        raise ValueError(f"answer {answer!r}: give an index or option text")
-    if isinstance(answer, int):
-        return answer  # `schema.Example` checks the range.
-    folded = [o.casefold() for o in options]
-    try:
-        return folded.index(answer.casefold())
-    except ValueError:
-        raise ValueError(
-            f"answer {answer!r} is not one of {list(options)}"
-        ) from None
-
-
-def to_example(row: Row, source: str) -> schema.Example:
-    """`row.to_example(source)`; an `Example` is returned unchanged."""
-    if isinstance(row, schema.Example):
-        return row
-    return row.to_example(source)
+def _example(row: "Record | schema.Example", source: str) -> schema.Example:
+    return row if isinstance(row, schema.Example) else row.to_example(source)
 
 
 def save(
-    splits: Mapping[str, Iterable[Row]],
+    splits: Mapping[str, Iterable["Record | schema.Example"]],
     source: str,
     out: str | pathlib.Path | None = None,
 ) -> pathlib.Path:
-    """Writes each split as <out>/<split>.parquet.
-
-    Train on it with `data.source=<source>` (or `data.source=<out>` when
-    `out` is given).
+    """Writes <out>/<split>.parquet per split; train with data.source=<source>.
 
     Args:
-      splits: Rows per split name, e.g. {"train": ..., "eval": ...}.
-      source: The dataset name given to records.
-      out: The folder to write; default: `storage.splits_home()/<source>`,
-        outside the workspace.
+      splits: Rows per split, e.g. {"train": ..., "eval": ...}.
+      source: The dataset name.
+      out: The folder; default: `storage.splits_home()/<source>`.
 
     Returns:
       The folder written.
-
-    Raises:
-      ValueError: If a record is invalid.
     """
     folder = pathlib.Path(out) if out else storage.splits_home() / source
     for split, rows in splits.items():
-        examples = [to_example(row, source) for row in rows]
+        examples = [_example(row, source) for row in rows]
         storage.save(storage.to_dataset(examples), folder / f"{split}.parquet")
     return folder
 
 
 def collate(
-    rows: Iterable[Row],
+    rows: Iterable["Record | schema.Example"],
     model: "models_base.DecisionModel",
     rng: random.Random | None = None,
     source: str = "custom",
 ) -> list[Any]:
-    """The rows encoded as `model` reads them in training.
-
-    Args:
-      rows: Records or examples.
-      model: Any decision model (`MaskedEncoder`, `TrieDecoder`, ...).
-      rng: Shuffles the options, as in training; None keeps their order.
-      source: The dataset name given to records.
-
-    Returns:
-      One encoding per row, of the model's type (e.g. `MaskEncoding`).
-
-    Raises:
-      ValueError: If a record is invalid.
-    """
-    return [model.encode(to_example(row, source), rng) for row in rows]
+    """The rows encoded as `model` reads them; `rng` shuffles as training."""
+    return [model.encode(_example(row, source), rng) for row in rows]
