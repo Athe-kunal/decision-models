@@ -146,8 +146,8 @@ Write an adapter that yields `adapter.Record(documents, question, options, answe
 |---|---|---|
 | `documents` | str | the input text; `""` if the question stands alone |
 | `question` | str | what to decide |
-| `options` | list of str, or a name in `adapter.OPTION_SETS` | `adapter.YES_NO` is shown as `Yes` / `No` |
-| `answer` | int or str | the correct option's 0-based index, or its text (case-insensitive) |
+| `options` | list of str, or a name in `Record.option_sets` | `adapter.YES_NO` is shown as `Yes` / `No` |
+| `answer` | int or str | the correct option's 0-based index, or its text (case-insensitive); not a bool |
 
 ```python
 import json
@@ -171,7 +171,15 @@ To see what a model is trained on, `adapter.collate(records, model)` returns the
 To extend it:
 
 - **More fields** (several documents, evidence spans, metadata): subclass `Record` and override `to_example(source)`, or yield `schema.Example`s; `save` and `collate` accept both.
-- **Another named option set**: `adapter.OPTION_SETS["true/false"] = ("True", "False")`, then `options="true/false"`.
+- **Another named option set**: subclass `Record` and extend `option_sets`:
+
+  ```python
+  @dataclasses.dataclass(frozen=True)
+  class MyRecord(adapter.Record):
+      option_sets = types.MappingProxyType(
+          {**adapter.Record.option_sets, "true/false": ("True", "False")}
+      )
+  ```
 - **Another model family**: implement `DecisionModel.encode`; `collate` and training call it.
 
 ### Add it to the build instead
