@@ -140,43 +140,49 @@ Or skip the build and train on the released mix (ReClor withheld): `data.source=
 
 ## Your own data
 
-Write `Example`s to `<folder>/train.parquet` and `<folder>/eval.parquet`. For example, from a JSONL file with `context`, `question`, `choices`, `answer` and an optional `evidence` quote:
+Write an adapter that yields `adapter.Record(documents, question, options, answer)`:
+
+| field | type | meaning |
+|---|---|---|
+| `documents` | str | the input text; `""` if the question stands alone |
+| `question` | str | what to decide |
+| `options` | list of str, or a name in `Record.option_sets` | `adapter.YES_NO` is shown as `Yes` / `No` |
+| `answer` | int or str | the correct option's 0-based index, or its text (case-insensitive); not a bool |
 
 ```python
 import json
-from decision_models.data import schema, storage
+from decision_models.data import adapter
 
-def to_example(i: int, r: dict) -> schema.Example:
-    context = r["context"]
-    start = context.find(r.get("evidence") or "\0")
-    spans = (schema.Span(0, start, start + len(r["evidence"])),) if start >= 0 else ()
-    return schema.Example(
-        id=f"mine:{i}", source="mine",
-        parts=(schema.Part("Document", context),),
-        question=r["question"],
-        options=tuple(r["choices"]),
-        gold=r["choices"].index(r["answer"]),
-        spans=spans,
-    )
+def my_adapter(path):
+    for line in open(path):
+        r = json.loads(line)
+        yield adapter.Record(r["context"], r["question"], adapter.YES_NO, r["label"])
 
-for split in ("train", "eval"):
-    with open(f"mine_{split}.jsonl") as f:
-        rows = [to_example(i, json.loads(line)) for i, line in enumerate(f)]
-    storage.save(storage.to_dataset(rows), f"data/splits/mine/{split}.parquet")
+adapter.save(
+    {"train": my_adapter("train.jsonl"), "eval": my_adapter("dev.jsonl")},
+    source="mine",
+)
 ```
 
-`Example` checks the invariants (≥ 2 options, gold in range, spans inside their part) and raises `ValueError` otherwise. Check how a row renders before training:
+Then train with `data.source=mine` (or evaluate with `rows.source=mine`). An answer that names no option raises `ValueError`; an unknown option-set name, `KeyError`.
 
-```python
-from transformers import AutoTokenizer
-from decision_models.models import decoder
+Saved datasets live outside the workspace, in `$LLM_JEV_DATA/splits/<source>` (default: `$HF_HOME/decision_models/splits/<source>`, i.e. `~/.cache/huggingface/decision_models/splits/mine`), next to the downloaded sources. Set `LLM_JEV_DATA` to move the cache, much like `HF_HOME` / `HF_DATASETS_CACHE`, or pass `out=` to write somewhere specific (then `data.source=<out>`). `data.source` is looked up as a path first, then as a name in this cache, then as a Hugging Face dataset id.
 
-tok = AutoTokenizer.from_pretrained("Qwen/Qwen3-0.6B")
-text, _ = decoder.build_prompt(rows[0], range(len(rows[0].options)), tok)
-print(text)
-```
+To see what a model is trained on, `adapter.collate(records, model)` returns the encodings of a `MaskedEncoder` or a `TrieDecoder`, the same ones training uses (pass `rng` to shuffle options as training does).
 
-Then train or evaluate on it with `data.source=data/splits/mine` (training) or `rows.source=data/splits/mine` (evaluation, prediction).
+To extend it:
+
+- **More fields** (several documents, evidence spans, metadata): subclass `Record` and override `to_example(source)`, or yield `schema.Example`s; `save` and `collate` accept both.
+- **Another named option set**: subclass `Record` and extend `option_sets`:
+
+  ```python
+  @dataclasses.dataclass(frozen=True)
+  class MyRecord(adapter.Record):
+      option_sets = types.MappingProxyType(
+          {**adapter.Record.option_sets, "true/false": ("True", "False")}
+      )
+  ```
+- **Another model family**: implement `DecisionModel.encode`; `collate` and training call it.
 
 ### Add it to the build instead
 

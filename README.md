@@ -74,7 +74,7 @@ Every command takes `--config file.yaml` plus `key=value` overrides, checked aga
 
 ## Docs
 
-- [Data](docs/data.md): build the mix, load it, bring your own rows
+- [Data](docs/data.md): build the mix, load it, bring your own data
 - [Training](docs/training.md): encoder recipes, decoder (LoRA / full), evaluation
 - [Inference](docs/inference.md): predict, local server, SGLang, LoRA merge
 - [Citations and evidence](docs/citation.md): ContextCite (one-pass for decoders), the evidence head, span labels

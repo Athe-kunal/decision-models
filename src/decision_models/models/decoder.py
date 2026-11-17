@@ -578,9 +578,15 @@ class TrieDecoder(base.DecisionModel):
         """The checkpoint folder: "adapter" (LoRA) or "model" (full)."""
         return "adapter" if self.settings.finetune == "lora" else "model"
 
+    def encode(
+        self, example: schema.Example, rng: random.Random | None = None
+    ) -> TrieEncoding:
+        """`encode` with this model's tokenizer."""
+        return encode(example, self.tokenizer, rng)
+
     def num_tokens(self, example: schema.Example) -> int:
         """Prompt + gold suffix tokens."""
-        return len(encode(example, self.tokenizer).input_ids)
+        return len(self.encode(example).input_ids)
 
     def score(self, examples: Sequence[schema.Example]) -> list[torch.Tensor]:
         """S [K] per example, in length-sorted padded batches."""
@@ -664,7 +670,7 @@ class TrieDecoder(base.DecisionModel):
 
         terms = trie.compute(
             self.network,
-            encode(example, self.tokenizer, rng),
+            self.encode(example, rng),
             self.device,
             self.tokenizer.pad_token_id,
             self.reference,
