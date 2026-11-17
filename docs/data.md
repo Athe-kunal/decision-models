@@ -140,47 +140,121 @@ Or skip the build and train on the released mix (ReClor withheld): `data.source=
 
 ## Your own data
 
-Write `Example`s to `<folder>/train.parquet` and `<folder>/eval.parquet`. For example, from a JSONL file with `context`, `question`, `choices`, `answer` and an optional `evidence` quote:
+Write an **adapter**: a function that reads your files and yields `adapter.Record`s. A record is the smallest thing a dataset has to say; `decision_models.data.adapter` turns records into `Example`s, writes them in the layout training reads, and formats them for an encoder or a decoder exactly as training does.
+
+| `Record` field | type | meaning |
+|---|---|---|
+| `documents` | str or list of str | the input text; a list becomes several parts, shown one after another; `""` if the question stands alone |
+| `question` | str | what to decide |
+| `options` | `adapter.YES_NO` or list of str | `YES_NO` (`"yes/no"`) is shown as `Yes` / `No`; a list needs at least 2 options |
+| `answer` | int, str or bool | the correct option: its 0-based index, its text (case-insensitive), or for `YES_NO` a bool (`True` = Yes) |
+| `id` | str, optional | unique within the dataset; default: a hash of the record |
+| `evidence` | list of str, optional | quotes from the documents that support the answer; each one found becomes a span (for the evidence head and ContextCite metrics) |
+| `group` | str, optional | leakage unit, e.g. the document id |
+
+### 1. Write the adapter
 
 ```python
 import json
-from decision_models.data import schema, storage
+from decision_models.data import adapter
 
-def to_example(i: int, r: dict) -> schema.Example:
-    context = r["context"]
-    start = context.find(r.get("evidence") or "\0")
-    spans = (schema.Span(0, start, start + len(r["evidence"])),) if start >= 0 else ()
-    return schema.Example(
-        id=f"mine:{i}", source="mine",
-        parts=(schema.Part("Document", context),),
-        question=r["question"],
-        options=tuple(r["choices"]),
-        gold=r["choices"].index(r["answer"]),
-        spans=spans,
-    )
-
-for split in ("train", "eval"):
-    with open(f"mine_{split}.jsonl") as f:
-        rows = [to_example(i, json.loads(line)) for i, line in enumerate(f)]
-    storage.save(storage.to_dataset(rows), f"data/splits/mine/{split}.parquet")
+def my_adapter(path: str):
+    with open(path) as f:
+        for line in f:
+            r = json.loads(line)
+            if r["type"] == "boolean":
+                yield adapter.Record(
+                    documents=r["context"],
+                    question=r["question"],
+                    options=adapter.YES_NO,
+                    answer=r["label"],            # True / False, or "yes" / "no"
+                    evidence=r.get("quotes", []),
+                )
+            else:
+                yield adapter.Record(
+                    documents=r["passages"],      # list[str] is fine
+                    question=r["question"],
+                    options=r["choices"],
+                    answer=r["answer"],           # index or option text
+                )
 ```
 
-`Example` checks the invariants (≥ 2 options, gold in range, spans inside their part) and raises `ValueError` otherwise. Check how a row renders before training:
+The adapter only parses: it does not tokenize, shuffle or know which model will train. Invalid records (fewer than 2 options, an answer that names no option, duplicate ids) raise `ValueError` with the record's position.
+
+### 2. Check how it is formatted (the collator)
+
+Pass the encoder or the decoder to `adapter.Collator`; it runs the same `encode` the trainer runs (`models/encoder.py:encode` / `models/decoder.py:encode`) and returns, per record, the prompt `text`, the `input_ids` and the `encoding` (`MaskEncoding` or `TrieEncoding`). Without an `rng` the options stay in your order; with one they are shuffled as in training.
 
 ```python
+import random
+from decision_models import config
+from decision_models.data import adapter
 from transformers import AutoTokenizer
-from decision_models.models import decoder
 
-tok = AutoTokenizer.from_pretrained("Qwen/Qwen3-0.6B")
-text, _ = decoder.build_prompt(rows[0], range(len(rows[0].options)), tok)
-print(text)
+records = list(my_adapter("mine_train.jsonl"))
+
+# From a tokenizer, no weights needed:
+dec = adapter.Collator.for_decoder(AutoTokenizer.from_pretrained("Qwen/Qwen3-0.6B"))
+enc = adapter.Collator.for_encoder(
+    AutoTokenizer.from_pretrained("Athekunal/ultrabert-jev-380m-sigmoid-norm"),
+    config.FormatConfig(no_token=" no"),          # the run's `format`
+)
+# ... or from a loaded model: adapter.Collator(model)   (MaskedEncoder or TrieDecoder)
+
+row = dec(records[:1])[0]
+print(row.text)            # chat prompt ending in "Best answer: ["
+row.input_ids              # prompt + gold suffix, as trained
+row.gold                   # gold index in the shown order
+
+shuffled = enc(records, rng=random.Random(0))   # what one training epoch sees
 ```
 
-Then train or evaluate on it with `data.source=data/splits/mine` (training) or `rows.source=data/splits/mine` (evaluation, prediction).
+A yes/no record renders like any other two-option row; for the encoder:
+
+```text
+State: The sky is blue today. Grass grows in the field.
+
+Is the sky blue?
+Mark the correct option with yes and every other option with no.
+Options:
+[1] <|mask|> Yes
+[2] <|mask|> No
+```
+
+### 3. Save it and train
+
+```python
+adapter.save(
+    {"train": my_adapter("mine_train.jsonl"), "eval": my_adapter("mine_dev.jsonl")},
+    out="data/splits/mine",
+    source="mine",            # the dataset name; per-dataset metrics group by it
+)
+```
+
+This writes `data/splits/mine/train.parquet` and `eval.parquet`. Train or evaluate on it with `data.source=data/splits/mine` (training) or `rows.source=data/splits/mine` (evaluation, prediction); nothing else changes. Rows over `data.max_tokens` are dropped at training time.
+
+### Without the adapter: `Example`s directly
+
+The adapter covers documents + question + options + answer. For more control (named parts, character-offset spans, `subset` / `meta`), build `schema.Example`s yourself; `adapter.save` and `adapter.Collator` accept them too:
+
+```python
+from decision_models.data import schema
+
+row = schema.Example(
+    id="mine:0", source="mine",
+    parts=(schema.Part("Contract", contract_text),),
+    question="Does the contract allow sublicensing?",
+    options=("Yes", "No"), gold=1,
+    spans=(schema.Span(0, 1354, 1637),),
+)
+adapter.save({"train": [row]}, "data/splits/mine", "mine")
+```
+
+`Example` checks the invariants (≥ 2 options, gold in range, spans inside their part) and raises `ValueError` otherwise.
 
 ### Add it to the build instead
 
-To mix your dataset into `make data` (deduplication, benchmark-overlap filter, sampling), register a source. `sources/multiple_choice.py` is the pattern: `base.make_example` gives stable ids and groups, and spans are given as `(part name, start, end)`.
+To mix your dataset into `make data` (deduplication, benchmark-overlap filter, sampling), register a source. An adapter plugs in directly: `{"train": adapter.to_examples(my_adapter(...), "mine"), "validation": ...}` is a valid `base.Split`. For stable ids and groups from raw keys, `sources/multiple_choice.py` is the pattern: `base.make_example` gives stable ids and groups, and spans are given as `(part name, start, end)`.
 
 ```python
 # src/decision_models/data/sources/mine.py
