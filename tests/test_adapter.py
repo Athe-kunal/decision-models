@@ -1,8 +1,10 @@
+import dataclasses
 import random
 
 import pytest
 
 from decision_models.data import adapter
+from decision_models.data import schema
 from decision_models.data import storage
 
 RECORDS = [
@@ -22,7 +24,8 @@ def test_records_become_examples() -> None:
 
 
 @pytest.mark.parametrize(
-    "options, answer", [(adapter.YES_NO, "maybe"), (["a", "b"], 2), (["a"], 0)]
+    "options, answer",
+    [(adapter.YES_NO, "maybe"), (["a", "b"], 2), (["a"], 0), ("true/false", 0)],
 )
 def test_bad_records_are_rejected(options, answer) -> None:
     with pytest.raises(ValueError):
@@ -43,3 +46,22 @@ def test_collate_matches_training_encoding(model, request) -> None:
     rng = random.Random(3)
     want = [model.encode(adapter.to_example(r, "mine"), rng) for r in RECORDS]
     assert got == want
+
+
+@dataclasses.dataclass(frozen=True)
+class WithEvidence(adapter.Record):
+    quote: str = ""
+
+    def to_example(self, source: str) -> schema.Example:
+        ex = super().to_example(source)
+        start = self.documents.index(self.quote)
+        span = schema.Span(0, start, start + len(self.quote))
+        return dataclasses.replace(ex, spans=(span,))
+
+
+def test_records_extend_by_subclass_and_examples_pass_through(tmp_path) -> None:
+    custom = WithEvidence("A. B.", "Q?", ["x", "y"], 0, quote="B.")
+    raw = adapter.to_example(RECORDS[0], "mine")
+    adapter.save({"train": [custom, raw]}, tmp_path, "mine")
+    got = storage.load_examples(str(tmp_path), "train")
+    assert got[0].spans == (schema.Span(0, 3, 5),) and got[1] == raw

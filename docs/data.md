@@ -146,7 +146,7 @@ Write an adapter that yields `adapter.Record(documents, question, options, answe
 |---|---|---|
 | `documents` | str | the input text; `""` if the question stands alone |
 | `question` | str | what to decide |
-| `options` | `adapter.YES_NO` or list of str | `YES_NO` is shown as `Yes` / `No` |
+| `options` | list of str, or a name in `adapter.OPTION_SETS` | `adapter.YES_NO` is shown as `Yes` / `No` |
 | `answer` | int or str | the correct option's 0-based index, or its text (case-insensitive) |
 
 ```python
@@ -168,7 +168,11 @@ Then train with `data.source=data/splits/mine` (or evaluate with `rows.source=..
 
 To see what a model is trained on, `adapter.collate(records, model)` returns the encodings of a `MaskedEncoder` or a `TrieDecoder`, the same ones training uses (pass `rng` to shuffle options as training does).
 
-For several named parts, evidence spans or metadata, build `schema.Example`s directly and write them with `storage.save(storage.to_dataset(rows), path)`.
+To extend it:
+
+- **More fields** (several documents, evidence spans, metadata): subclass `Record` and override `to_example(source)`, or yield `schema.Example`s; `save` and `collate` accept both.
+- **Another named option set**: `adapter.OPTION_SETS["true/false"] = ("True", "False")`, then `options="true/false"`.
+- **Another model family**: implement `DecisionModel.encode`; `collate` and training call it.
 
 ### Add it to the build instead
 

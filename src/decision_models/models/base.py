@@ -137,6 +137,12 @@ class DecisionModel(abc.ABC):
         return (p for p in self.network.parameters() if p.requires_grad)
 
     @abc.abstractmethod
+    def encode(
+        self, example: schema.Example, rng: random.Random | None = None
+    ) -> Any:
+        """The row as the network reads it; `rng` shuffles its options."""
+
+    @abc.abstractmethod
     def num_tokens(self, example: schema.Example) -> int:
         """Length of the encoded row, to drop rows over a token budget."""
 
