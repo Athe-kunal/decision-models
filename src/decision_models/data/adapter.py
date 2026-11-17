@@ -117,27 +117,31 @@ def to_example(row: Row, source: str) -> schema.Example:
 
 def save(
     splits: Mapping[str, Iterable[Row]],
-    out: str | pathlib.Path,
     source: str,
-) -> None:
+    out: str | pathlib.Path | None = None,
+) -> pathlib.Path:
     """Writes each split as <out>/<split>.parquet.
 
-    Train on it with `data.source=<out>`.
+    Train on it with `data.source=<source>` (or `data.source=<out>` when
+    `out` is given).
 
     Args:
       splits: Rows per split name, e.g. {"train": ..., "eval": ...}.
-      out: The folder to write.
       source: The dataset name given to records.
+      out: The folder to write; default: `storage.splits_home()/<source>`,
+        outside the workspace.
+
+    Returns:
+      The folder written.
 
     Raises:
       ValueError: If a record is invalid.
     """
+    folder = pathlib.Path(out) if out else storage.splits_home() / source
     for split, rows in splits.items():
         examples = [to_example(row, source) for row in rows]
-        storage.save(
-            storage.to_dataset(examples),
-            pathlib.Path(out) / f"{split}.parquet",
-        )
+        storage.save(storage.to_dataset(examples), folder / f"{split}.parquet")
+    return folder
 
 
 def collate(

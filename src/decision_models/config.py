@@ -50,7 +50,8 @@ class DataConfig:
     """Training and evaluation rows.
 
     Attributes:
-      source: A local folder of <split>.parquet files or a Hub dataset id.
+      source: A local folder of <split>.parquet files, a dataset name
+        saved by `adapter.save`, or a Hub dataset id.
       train_split: Split the model is trained on.
       eval_split: Held-out split evaluated during training.
       max_tokens: Encoded training rows longer than this are dropped.
@@ -126,7 +127,8 @@ class RowsConfig:
     """Which rows of a split a command reads (data.sampling.select).
 
     Attributes:
-      source: A local folder of <split>.parquet files or a Hub dataset id.
+      source: A local folder of <split>.parquet files, a dataset name
+        saved by `adapter.save`, or a Hub dataset id.
       split: The split to read.
       datasets: Only these source datasets (None: all).
       part: "dev" (the fixed per-dataset sample settings were chosen on),
@@ -397,7 +399,7 @@ class EvidenceDataConfig:
     """Evidence labels: gold spans, and generated spans where gold is missing.
 
     Attributes:
-      source: Data folder or Hub id.
+      source: Data folder, `adapter.save` name or Hub id.
       split: Training split.
       labels: "gold" or "gold+generated" (gold wins where both exist).
       generated_repo: Hub dataset holding the generated spans.
@@ -478,7 +480,7 @@ class SpansConfig:
       model: Hub id of the labelling model, for its tokenizer.
       served_name: The name the server gives the model.
       base_url: One or more servers (rows are spread round-robin).
-      source: Data folder or Hub id.
+      source: Data folder, `adapter.save` name or Hub id.
       split: Split to label.
       n: Citation sets sampled per row.
       temperature: Sampling temperature.

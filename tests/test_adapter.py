@@ -61,11 +61,26 @@ def test_bad_records_are_rejected(options, answer) -> None:
         adapter.to_example(adapter.Record("d", "q", options, answer), "mine")
 
 
-def test_save_round_trips(tmp_path) -> None:
-    adapter.save({"train": RECORDS}, tmp_path, "mine")
-    assert storage.load_examples(str(tmp_path), "train") == [
+@pytest.fixture
+def data_home(tmp_path, monkeypatch):
+    monkeypatch.setenv("LLM_JEV_DATA", str(tmp_path / "home"))
+    return tmp_path / "home"
+
+
+def test_save_by_name_goes_to_the_cache(data_home) -> None:
+    folder = adapter.save({"train": RECORDS}, "mine")
+    assert folder == data_home / "splits" / "mine"
+    assert storage.load_examples("mine", "train") == [
         adapter.to_example(r, "mine") for r in RECORDS
     ]
+    with pytest.raises(FileNotFoundError):
+        storage.load_dataset("mine", "eval")
+
+
+def test_save_to_a_folder(tmp_path, data_home) -> None:
+    folder = adapter.save({"train": RECORDS}, "mine", out=tmp_path / "x")
+    assert folder == tmp_path / "x" and not data_home.exists()
+    assert len(storage.load_examples(str(folder), "train")) == len(RECORDS)
 
 
 @pytest.mark.parametrize("model_name", ["masked_encoder", "trie_decoder"])
@@ -77,12 +92,12 @@ def test_collate_matches_training_encoding(model_name, request) -> None:
     assert got == want
 
 
-def test_subclasses_extend_records(tmp_path) -> None:
+def test_subclasses_extend_records(data_home) -> None:
     evidence = WithEvidence("A. B.", "Q?", ["x", "y"], 0, quote="B.")
     true_false = TrueFalse("d", "q", "true/false", "false")
     example = adapter.to_example(RECORDS[0], "mine")
-    adapter.save({"train": [evidence, true_false, example]}, tmp_path, "mine")
-    got = storage.load_examples(str(tmp_path), "train")
+    adapter.save({"train": [evidence, true_false, example]}, "mine")
+    got = storage.load_examples("mine", "train")
     assert got[0].spans == (schema.Span(0, 3, 5),)
     assert got[1].options == ("True", "False") and got[1].gold == 1
     assert got[2] == example
